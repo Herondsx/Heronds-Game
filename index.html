@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="THE BACKROOMS — caia para fora da realidade." />
+  <title>THE BACKROOMS — Nível 0</title>
+  <link rel="stylesheet" href="backrooms.css" />
+</head>
+<body>
+  <!-- O canvas WebGL do jogo (Three.js) é criado por backrooms.js e fica no fundo -->
+
+  <!-- ============ INTRO CINEMATOGRÁFICA (Canvas 2D) ============ -->
+  <div id="intro">
+    <canvas id="intro-canvas"></canvas>
+    <div id="lore-text"></div>
+    <button id="skip-intro">pular intro ⏭</button>
+  </div>
+
+  <!-- ============ TELA DE TÍTULO (antes da intro) ============ -->
+  <div id="title-screen">
+    <div class="title-box">
+      <h1>BACKROOMS</h1>
+      <div class="sub">— NÍVEL 0 · "ALMOND WATER" —</div>
+      <p class="warn">Use fones de ouvido 🎧</p>
+      <div class="blink">▶ CLIQUE PARA COMEÇAR</div>
+    </div>
+  </div>
+
+  <!-- ============ CAMADA DE UI DO JOGO ============ -->
+  <div id="ui-layer">
+    <!-- Menu que aparece DEPOIS da intro (entrada no jogo) -->
+    <div id="start-menu">
+      <h1>VOCÊ NO-CLIPOU</h1>
+      <div class="sub">— PARA FORA DA REALIDADE —</div>
+      <div class="keys">
+        <b>MOUSE</b><span>Olhar ao redor</span>
+        <b>W A S D</b><span>Mover</span>
+        <b>SHIFT</b><span>Correr</span>
+        <b>E</b><span>Interagir</span>
+      </div>
+      <p class="brief">
+        Encontre a <b class="green">SAÍDA verde</b> e fuja.<br />
+        <b class="red">Algo</b> caminha por estes corredores.<br />Não deixe te alcançar.
+      </p>
+      <div class="hint">O som te dirá de onde ele vem.</div>
+      <div class="blink">▶ CLIQUE PARA ACORDAR</div>
+    </div>
+
+    <div id="crosshair"></div>
+    <div id="objective">▸ ENCONTRE A SAÍDA</div>
+    <div id="compass">
+      <div id="compass-arrow">▲</div>
+      <div id="compass-dist">SAÍDA</div>
+    </div>
+    <div id="interaction-msg">Pressione [ E ] para atravessar a saída</div>
+
+    <div id="hud">
+      <div class="label">FÔLEGO</div>
+      <div id="stamina-wrap"><div id="stamina"></div></div>
+    </div>
+  </div>
+
+  <div id="vignette"></div>
+  <div id="flash"></div>
+  <div id="jumpscare"></div>
+
+  <div id="caught-screen">
+    <h1>ELE TE ENCONTROU</h1>
+    <p>respirando fundo... voltando ao início...</p>
+  </div>
+
+  <div id="win-screen">
+    <h1>VOCÊ ESCAPOU</h1>
+    <p>...mas os Fundos não esquecem quem já caiu.</p>
+    <button id="win-restart" class="menu-btn">DESCER DE NOVO</button>
+  </div>
+
+  <div id="fade"></div>
+
+  <!-- Áudio da intro (pasta Assets — atenção à maiúscula no GitHub Pages) -->
+  <audio id="intro-audio" src="Assets/Audio-intro.mp3" preload="auto"></audio>
+
+  <!-- Three.js via CDN (o GitHub Pages serve o HTML; o navegador baixa a lib) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="intro.js"></script>
+  <script src="backrooms.js"></script>
+  <script>
+    /* ============ ORQUESTRAÇÃO DO FLUXO ============
+       título → intro (áudio) → menu do jogo → jogo */
+    (function () {
+      const titleScreen = document.getElementById('title-screen');
+      const introEl = document.getElementById('intro');
+      const introAudio = document.getElementById('intro-audio');
+
+      function beginIntro() {
+        titleScreen.classList.add('hide');
+        setTimeout(() => (titleScreen.style.display = 'none'), 600);
+        window.Intro.start(introAudio, onIntroDone);
+      }
+
+      function onIntroDone() {
+        // Para o áudio da intro, esconde a intro e sobe o jogo
+        try { introAudio.pause(); } catch (e) {}
+        introEl.classList.add('gone');
+        setTimeout(() => (introEl.style.display = 'none'), 1300);
+        // O motor 3D do jogo só é montado agora (evita 2 contextos WebGL)
+        window.BackroomsGame.init();
+        window.BackroomsGame.revealMenu();
+      }
+
+      titleScreen.addEventListener('click', beginIntro, { once: true });
+    })();
+  </script>
+</body>
+</html>
