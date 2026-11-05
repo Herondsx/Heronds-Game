@@ -1,13 +1,14 @@
 /* ============================================================
-   THE BACKROOMS — motor de áudio (Web Audio, 100% procedural)
+   THE BACKROOMS — motor de áudio (Web Audio)
    ------------------------------------------------------------
    * Áudio 3D com HRTF (PannerNode) — use fones de ouvido.
    * Oclusão: sons atrás de paredes passam por um passa-baixa
      calculado a partir do caminho real pelo labirinto.
    * Reverb de "sala vazia" gerado por convolução (IR sintética).
-   * Todos os efeitos são sintetizados: passos no carpete úmido,
-     respiração, coração, cliques e grito da entidade, estouro
-     de lâmpada, batidas na parede, telefone antigo tocando...
+   * Gravações (Assets/sfx): passos do jogador, passos e grito da
+     entidade, clique da lanterna, susto e zumbido ambiente.
+   * O resto é sintetizado: respiração, coração, cliques da
+     entidade, estouro de lâmpada, batidas, telefone antigo...
    * O rádio toca as músicas da pasta Assets de forma posicional
      (um alto-falante velho em algum lugar do nível).
    ============================================================ */
@@ -80,6 +81,7 @@
     monster: { url: 'Assets/sfx/monstro-passos.mp3', slot: 1.0, lead: 0.05, count: 4, len: 0.95 },
     flash: { url: 'Assets/sfx/lanterna-clique.mp3' },
     jumpscare: { url: 'Assets/sfx/jumpscare.mp3' },
+    scream: { url: 'Assets/sfx/grito.mp3' },
     amb: { url: 'Assets/sfx/ambiente-loop.mp3' },
   };
   A.buf = {};
@@ -585,8 +587,31 @@
     chain(s, filt('bandpass', 2300, 0.9), g, o);
   };
 
-  A.screech = function (x, y, z, vol) {
-    if (!A.ctx) return;
+  // grito da entidade — a gravação enviada para o projeto (Assets/sfx/grito.mp3).
+  // opt: { short: segundos (corta com fade), rate: tom (< 1 = mais grave, criatura maior) }
+  // Devolve o canal espacial: o cérebro move o grito junto com a criatura enquanto ele dura.
+  A.screech = function (x, y, z, vol, opt) {
+    if (!A.ctx) return null;
+    opt = opt || {};
+    const b = A.buf.scream;
+    if (!b) { screechSynth(x, y, z, vol); return null; }
+    const t = A.now();
+    const rate = (opt.rate || 1) * U.rand(0.97, 1.03);
+    const len = Math.min(b.duration, opt.short || b.duration);
+    const life = len / rate;
+    const ch = A.spatial(x, y, z, { ref: 3.4, roll: 0.8, rev: 0.7 });
+    const src = A.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate;
+    const g = A.ctx.createGain(), peak = 1.0 * (vol || 1);
+    g.gain.setValueAtTime(peak, t);
+    if (opt.short) { g.gain.setValueAtTime(peak, t + life * 0.6); g.gain.linearRampToValueAtTime(0.0001, t + life); }
+    src.connect(g); g.connect(ch.input);
+    src.start(t, 0, len);
+    ch.until = t + life;
+    setTimeout(() => ch.dispose(), (life + 1.2) * 1000);
+    return ch;
+  };
+  // versão sintetizada (só se o arquivo não carregar)
+  function screechSynth(x, y, z, vol) {
     const t = A.now(), dur = 1.9;
     const o = out([x, y, z], dur + 0.3, { ref: 3, roll: 0.85, rev: 0.6 });
     const mix = A.ctx.createGain(); mix.gain.value = 0.32 * (vol || 1);
@@ -611,7 +636,7 @@
     amg.gain.value = 0.5; am.connect(amg);
     const subg = A.ctx.createGain(); subg.gain.value = 0.5; amg.connect(subg.gain);
     chain(sub, filt('lowpass', 300), subg, env(t, 0.05, 0.9, 1.6), mix);
-  };
+  }
 
   A.growl = function (x, y, z, vol) {
     if (!A.ctx) return;

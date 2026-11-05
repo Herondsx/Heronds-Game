@@ -372,7 +372,7 @@
     }
     this.lmTex.needsUpdate = true;
   };
-  // luz percebida em um ponto (para IA, sanidade e zumbido)
+  // luz percebida em um ponto (para a IA e o zumbido)
   W.lightAt = function (x, z) {
     const ps = T / this.PPT, LW = this.LW;
     const ix = U.clamp(Math.floor(x / ps), 0, LW - 1), iz = U.clamp(Math.floor(z / ps), 0, LW - 1);

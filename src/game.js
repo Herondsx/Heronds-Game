@@ -1,8 +1,8 @@
 /* ============================================================
    THE BACKROOMS — jogo (orquestração)
    ------------------------------------------------------------
-   Jogador, mecânicas, objetivos, sanidade, alucinações, eventos
-   ambientes, interface e o laço principal.
+   Jogador, mecânicas, objetivos, medo, eventos ambientes,
+   interface e o laço principal.
 
    Exposto como window.BackroomsGame:
      .init()        -> monta renderer/cena e o Nível 0
@@ -46,7 +46,7 @@ window.BackroomsGame = (function () {
         'Se você está lendo isto, você também caiu.\n\nNão corra à toa. ELE OUVE os passos — correndo, de longe.\nAgachado [C] você quase não faz barulho.',
         'A lanterna [F] te salva e te entrega.\nSe ele estiver olhando pro seu lado, a luz é um farol.\n\nNo escuro, parado e agachado, ele passa do seu lado e não te vê.',
         'As luzes piscam quando ele está perto. Sempre.\n\nMenos quando ele está esperando por você.\nAí fica tudo quieto. Quieto demais.',
-        'Água de amêndoa. Beba [X] quando as paredes começarem a respirar.\n\nNão é força de expressão.',
+        'Água de amêndoa. Beba [X] quando o fôlego acabar.\n\nO coração desacelera e, por um tempo, as pernas aguentam correr de novo.',
         'Joguei uma garrafa vazia [G] e ele foi atrás do barulho.\nNa segunda vez ele veio direto em MIM.\n\nEle aprende.',
         'Três disjuntores religam a porta de manutenção.\nO estalo é alto. Ele vai saber pra onde você está indo — e vai te esperar.',
         'Apontei a lanterna na cara dele. Ele recuou, gritou.\nNa terceira vez ele nem piscou.',
@@ -80,7 +80,7 @@ window.BackroomsGame = (function () {
   // ==========================================================
   let renderer, scene, camera, post, uni;
   let world = null, theme = null, levelIndex = 0;
-  let entity, brain, ghost = null, flashModel, flashLens, beam, dust;
+  let entity, brain, flashModel, flashLens, beam, dust;
   let state = 'menu', loopStarted = false, prevT = 0, time = 0, debug = false;
   const keys = {};
   const objects = [];
@@ -89,7 +89,7 @@ window.BackroomsGame = (function () {
   let distField = null, dfTimer = 0, trail = [], trailSet = new Set(), trailTimer = 0;
   let explored = null, mapOpen = false, mapTimer = 0, revealTimer = 0;
   let power = 1, blackoutT = 0, flickA = 1, flickB = 1, flickT = 0, monFlick = 0;
-  let scareT = 0, eventT = 20, halluT = 30, whisperT = 15, hintQueue = [], hintT = 0;
+  let scareT = 0, eventT = 20, hintQueue = [], hintT = 0;
   let playerSeesMonster = false, sawMonsterCool = 0, objectiveDone = 0, exitPowered = false, exitObj = null, generatorObj = null;
   let toastT = 0, readingNote = null, interactTarget = null, levelTitleT = 0;
   let bottles = [], bumpCool = 0, lastSafe = null;
@@ -101,7 +101,7 @@ window.BackroomsGame = (function () {
     crouch: false, crouchT: 0, running: false, stamina: 1, exhausted: false,
     breath: 1, holding: false, breathLock: 0, breathT: 0, inhale: true,
     flashOn: false, hasFlash: false, battery: 1, flashI: 0, flashDir: new THREE.Vector3(0, 0, -1), flashFlick: 1,
-    sanity: 1, fear: 0, heartT: 0,
+    fear: 0, heartT: 0, calmT: 0,
     inv: { battery: 1, almond: 0, empty: 1, fuses: 0 },
     busy: 0, busyKind: null, stepAcc: 0, bobPhase: 0, roll: 0, fov: 72,
   };
@@ -859,7 +859,7 @@ window.BackroomsGame = (function () {
     ui.hud.classList.toggle('prologue', !!theme.prologue);
     distField = world.distField(world.tileOf(P.x, P.z), 70);
     trail = []; trailSet = new Set();
-    eventT = U.rand(14, 24); halluT = U.rand(30, 50);
+    eventT = U.rand(14, 24);
     updateObjective();
     if (A.ctx) { A.setAmbienceKind(theme.ambience); if (radio && state !== 'menu') radio.setOn(true); }
     if (!theme.prologue) P.hasFlash = true;
@@ -889,7 +889,7 @@ window.BackroomsGame = (function () {
     ui = {
       startMenu: $('start-menu'), hud: $('hud'), crosshair: $('crosshair'), objective: $('objective'),
       prompt: $('prompt'), toast: $('toast'), rec: $('rec'), recTime: $('rec-time'),
-      stamina: $('bar-stamina'), breath: $('bar-breath'), breathWrap: $('wrap-breath'), sanity: $('bar-sanity'),
+      stamina: $('bar-stamina'), breath: $('bar-breath'), breathWrap: $('wrap-breath'),
       battery: $('battery-fill'), batteryPct: $('battery-pct'), inv: $('inv'),
       note: $('note-overlay'), noteText: $('note-text'),
       map: $('map-overlay'), mapCanvas: $('map-canvas'),
@@ -920,13 +920,9 @@ window.BackroomsGame = (function () {
     dust = BR.Shading.dust(500);
     scene.add(dust);
 
-    // entidade + fantasma (alucinação)
-    const skin = TT(Tex.skin());
-    entity = new BR.Creature(BR.Entity.gameMaterials(skin));
+    // a entidade (malha contínua com esqueleto, gerada uma vez)
+    entity = new BR.Creature();
     scene.add(entity.root);
-    ghost = new BR.Entity(BR.Entity.gameMaterials(skin));
-    ghost.root.visible = false;
-    scene.add(ghost.root);
     brain = new BR.Brain(api, entity);
 
     A.occluder = occlusion;
@@ -1115,9 +1111,11 @@ window.BackroomsGame = (function () {
     if (mapOpen) target *= 0.6;
     if (readingNote) target *= 0.5;
 
-    // ~11 s de corrida contínua; recupera em ~6 s parado
-    if (wantRun) P.stamina = Math.max(0, P.stamina - dt / 11);
-    else P.stamina = Math.min(1, P.stamina + (dt / 6) * (P.fear > 0.5 ? 0.7 : 1) * (moving ? 0.8 : 1.2));
+    // ~11 s de corrida contínua; recupera em ~6 s parado (a água de amêndoa dobra o fôlego por 30 s)
+    P.calmT = Math.max(0, P.calmT - dt);
+    const calm = P.calmT > 0 ? 0.5 : 1;
+    if (wantRun) P.stamina = Math.max(0, P.stamina - (dt / 11) * calm);
+    else P.stamina = Math.min(1, P.stamina + (dt / 6) * (P.fear > 0.5 ? 0.7 : 1) * (moving ? 0.8 : 1.2) / calm);
 
     const acc = moving ? 10 : 12;
     P.vx += (ix * target - P.vx) * Math.min(1, acc * dt);
@@ -1168,7 +1166,7 @@ window.BackroomsGame = (function () {
     const breathe = Math.sin(time * (1.2 + P.fear * 2)) * 0.008 * (1 + P.fear);
     P.y = U.lerp(1.62, 1.02, P.crouchT) + bobY + breathe;
     const strafe = (P.vx * rx + P.vz * rz) / 5;
-    P.roll = U.damp(P.roll, -strafe * 0.035 + (P.sanity < 0.35 ? Math.sin(time * 0.6) * (0.35 - P.sanity) * 0.12 : 0), 6, dt);
+    P.roll = U.damp(P.roll, -strafe * 0.035, 6, dt);
 
     camera.position.set(P.x + rx * bobX, P.y, P.z + rz * bobX);
     camera.rotation.set(P.pitch + shakeAmt * U.rand(-0.03, 0.03), P.yaw + shakeAmt * U.rand(-0.03, 0.03), P.roll, 'YXZ');
@@ -1198,8 +1196,8 @@ window.BackroomsGame = (function () {
         if (P.busyKind === 'battery') { P.inv.battery--; P.battery = 1; toast('Pilhas trocadas.'); A.flashClick(); }
         if (P.busyKind === 'drink') {
           P.inv.almond--; P.inv.empty++; stats.drinks++;
-          P.sanity = Math.min(1, P.sanity + 0.45); P.stamina = 1;
-          toast('Água de amêndoa. As paredes param de respirar.');
+          P.stamina = 1; P.exhausted = false; P.calmT = 30; P.breath = 1;
+          toast('Água de amêndoa. O coração desacelera. Fôlego de sobra por um tempo.');
         }
         P.busyKind = null;
       }
@@ -1313,12 +1311,13 @@ window.BackroomsGame = (function () {
   }
 
   // ==========================================================
-  //  PERCEPÇÃO DO JOGADOR / MEDO / SANIDADE
+  //  PERCEPÇÃO DO JOGADOR / MEDO
   // ==========================================================
   function checkSeesMonster() {
     const st = brain.state;
     if (st === 'dormant') { playerSeesMonster = false; return; }
-    const hx = brain.pos.x, hz = brain.pos.z, hy = st === 'chase' ? 1.4 : 2.1;
+    entity.head.getWorldPosition(vR); // onde a cabeça está de verdade (em pé, de quatro ou no teto)
+    const hx = vR.x, hz = vR.z, hy = vR.y;
     const dx = hx - camera.position.x, dy = hy - camera.position.y, dz = hz - camera.position.z;
     const d = Math.hypot(dx, dy, dz);
     camera.getWorldDirection(vF);
@@ -1331,31 +1330,22 @@ window.BackroomsGame = (function () {
     playerSeesMonster = lit || flashed || d < 4;
   }
 
-  function updateFearSanity(dt) {
-    if (theme.prologue) { P.sanity = 1; P.fear = 0; return; }
+  function updateFear(dt) {
+    if (theme.prologue) { P.fear = 0; return; }
     const md = brain.dist, st = brain.state;
     let f = 0;
     if (st !== 'dormant') f = Math.max(0, 1 - md / 16) * 0.6;
     if (st === 'chase') f = Math.max(f, 0.55 + Math.max(0, 1 - md / 20) * 0.45);
     if (playerSeesMonster) f = Math.max(f, 0.75);
+    if (P.calmT > 0) f *= 0.6; // água de amêndoa: o coração desacelera
     P.fear = U.damp(P.fear, f, f > P.fear ? 3 : 0.4, dt);
 
     sawMonsterCool -= dt;
     if (playerSeesMonster && sawMonsterCool <= 0) {
       sawMonsterCool = 25;
       if (st !== 'chase') A.stinger();
-      P.sanity -= 0.06;
       shake(0.2);
     }
-    const light = world.lightAt(P.x, P.z);
-    const dark = light < 0.12 && P.flashI < 0.1;
-    let ds = -0.0016;
-    if (dark) ds -= 0.007;
-    if (playerSeesMonster) ds -= 0.03;
-    if (st === 'chase') ds -= 0.01;
-    if (light > 0.5 && !dark) ds += 0.002;
-    if (blackoutT > 0) ds -= 0.01;
-    P.sanity = U.clamp(P.sanity + ds * dt, 0, 1);
 
     // coração
     const hr = Math.max(P.fear, P.holding ? 0.45 : 0);
@@ -1366,54 +1356,8 @@ window.BackroomsGame = (function () {
   }
 
   // ==========================================================
-  //  ALUCINAÇÕES E EVENTOS AMBIENTES
+  //  EVENTOS AMBIENTES
   // ==========================================================
-  let ghostT = 0, ghostSeenT = 0;
-  function hallucinations(dt) {
-    if (theme.prologue) return;
-    const s = P.sanity;
-    whisperT -= dt;
-    if (s < 0.6 && whisperT <= 0) {
-      whisperT = U.rand(8, 22) * (0.4 + s);
-      const ang = P.yaw + U.rand(2.2, 4.0);
-      A.whisper(P.x - Math.sin(ang) * 1.4, P.y, P.z - Math.cos(ang) * 1.4);
-      if (s < 0.4 && Math.random() < 0.4) {
-        const back = P.yaw + Math.PI;
-        setTimeout(() => A.monsterStep(P.x - Math.sin(back) * -3, P.z - Math.cos(back) * -3, 0.5, false), 600);
-      }
-    }
-    // figura falsa no fim do corredor
-    if (ghost.root.visible) {
-      ghostT += dt;
-      ghost.update(dt, { speed: 0, look: camera.position, jerky: 1, agitation: 0.6, eyeGlow: 0.6 });
-      const gx = ghost.root.position.x, gz = ghost.root.position.z;
-      const d = Math.hypot(gx - P.x, gz - P.z);
-      camera.getWorldDirection(vF);
-      const dot = ((gx - P.x) * vF.x + (gz - P.z) * vF.z) / d;
-      if (dot > 0.6) ghostSeenT += dt;
-      const flashed = P.flashI > 0.3 && ((gx - P.x) * P.flashDir.x + (gz - P.z) * P.flashDir.z) / d > 0.93;
-      if (d < 7 || ghostT > 5 || flashed || (ghostSeenT > 0.4 && dot < 0.3)) {
-        ghost.root.visible = false; A.glitch(0.8); glitchPulse = 0.6;
-        P.sanity = Math.max(0, P.sanity - 0.03);
-      }
-      return;
-    }
-    halluT -= dt;
-    if (s < 0.42 && halluT <= 0) {
-      halluT = U.rand(25, 50) * (0.5 + s);
-      camera.getWorldDirection(vF);
-      const fx = vF.x, fz = vF.z, fl = Math.hypot(fx, fz) || 1;
-      for (let dd = 18; dd > 9; dd -= 1.2) {
-        const gx = P.x + (fx / fl) * dd, gz = P.z + (fz / fl) * dd;
-        if (world.solidAt(gx, gz) || !world.los(P.x, P.z, gx, gz)) continue;
-        ghost.root.position.set(gx, 0, gz);
-        ghost.root.rotation.y = Math.atan2(P.x - gx, P.z - gz);
-        ghost.root.visible = true; ghostT = 0; ghostSeenT = 0;
-        break;
-      }
-    }
-  }
-
   function ambientEvents(dt) {
     if (theme.prologue) return;
     eventT -= dt;
@@ -1523,6 +1467,7 @@ window.BackroomsGame = (function () {
     closeNote(); mapOpen = false; ui.map.classList.remove('show');
     showHUD(false);
     A.jumpscare();
+    brain.scream(0.7, 2.6); // e o grito dela, na sua cara
     if (brain.voice) brain.voice.set(brain.pos.x, 2, brain.pos.z, 0, 1, 0);
     // a entidade surge na sua frente, na altura do rosto
     camera.getWorldDirection(vF);
@@ -1540,7 +1485,7 @@ window.BackroomsGame = (function () {
     camera.getWorldDirection(vF);
     const reach = U.lerp(0.9, 0.32, Math.min(1, scareT * 3.5));
     vT.copy(camera.position).addScaledVector(vF, reach);
-    vT.y -= 0.12;
+    vT.y -= 0.035;
     entity.root.updateMatrixWorld(true);
     entity.head.getWorldPosition(vR);
     entity.root.position.add(vT.sub(vR));
@@ -1557,7 +1502,7 @@ window.BackroomsGame = (function () {
       updateCaught.shown = false;
       ui.caught.classList.remove('show');
       placePlayerAtStart();
-      P.sanity = Math.max(P.sanity, 0.6); P.fear = 0;
+      P.fear = 0;
       brain.respawnFar();
       entity.root.position.y = 0;
       redPulse = 0;
@@ -1743,8 +1688,6 @@ window.BackroomsGame = (function () {
     ui.stamina.classList.toggle('low', P.exhausted || P.stamina < 0.25);
     ui.breathWrap.style.opacity = P.breath < 0.999 ? 1 : 0;
     ui.breath.style.width = (P.breath * 100).toFixed(1) + '%';
-    ui.sanity.style.width = (P.sanity * 100).toFixed(1) + '%';
-    ui.sanity.classList.toggle('low', P.sanity < 0.3);
     ui.battery.style.width = (P.battery * 100).toFixed(0) + '%';
     ui.battery.classList.toggle('low', P.battery < 0.2);
     ui.batteryPct.textContent = P.busyKind === 'battery' ? 'trocando...' : Math.round(P.battery * 100) + '%' + (P.flashOn ? '' : ' (desl.)');
@@ -1816,8 +1759,7 @@ window.BackroomsGame = (function () {
       if (dfTimer <= 0) { dfTimer = 0.25; distField = world.distField(world.tileOf(P.x, P.z), 70); }
       brain.update(dt);
       checkSeesMonster();
-      updateFearSanity(dt);
-      hallucinations(dt);
+      updateFear(dt);
       ambientEvents(dt);
       updateObjects(dt);
       revealTimer -= dt;
@@ -1852,19 +1794,18 @@ window.BackroomsGame = (function () {
     // pós-processamento
     shakeAmt = Math.max(0, shakeAmt - dt * 1.8);
     glitchPulse = Math.max(0, glitchPulse - dt * 1.5);
-    const fx = BR.Settings.fx, pu = post.u, s = P.sanity;
+    const fx = BR.Settings.fx, pu = post.u;
     pu.uTime.value = time;
-    pu.uGrain.value = (0.045 + (1 - s) * 0.05 + P.fear * 0.03) * (0.3 + 0.7 * fx);
+    pu.uGrain.value = (0.05 + P.fear * 0.045) * (0.3 + 0.7 * fx);
     pu.uVignette.value = 0.55 + P.fear * 0.3;
-    pu.uAberr.value = (0.5 + P.fear * 1.6 + (1 - s) * 1.2 + transFX * 3.5) * fx;
-    pu.uWave.value = (Math.max(0, 0.45 - s) * 2.2 + transFX * 1.4) * fx;
-    pu.uDouble.value = Math.max(0, 0.25 - s) * 3 * fx;
+    pu.uAberr.value = (0.5 + P.fear * 1.8 + transFX * 3.5) * fx;
+    pu.uWave.value = transFX * 1.4 * fx; // só nas transições entre lugares
     const near = brain && brain.state !== 'dormant' ? Math.max(0, 1 - brain.dist / 7) : 0;
     pu.uStatic.value = (near * 0.12 + glitchPulse * 0.25) * fx;
     pu.uGlitch.value = Math.min(1, glitchPulse + near * 0.15 + transFX * 0.35 + transFade * 0.6) * fx;
-    pu.uDesat.value = Math.max(0, 0.6 - s) * 0.9 + transFX * 0.6;
+    pu.uDesat.value = P.fear * 0.12 + transFX * 0.6;
     pu.uFade.value = transFade;
-    pu.uDouble.value = Math.max(pu.uDouble.value, transFX * 0.8 * fx);
+    pu.uDouble.value = transFX * 0.8 * fx;
     pu.uRed.value = redPulse;
     pu.uScan.value = 0.35 * fx;
     pu.uBright.value = BR.Settings.brightness;
@@ -1872,7 +1813,7 @@ window.BackroomsGame = (function () {
     pu.uBloom.value = 0.7;
     pu.uLens.value = 1;
     uni.uExposure.value = 1.0;
-    uni.uBreath.value = Math.max(0, 0.5 - s) * 2 + transFX * 3;
+    uni.uBreath.value = transFX * 3; // paredes "respiram" só ao atravessar para outro lugar
     post.render(scene, camera);
   }
 
@@ -1905,13 +1846,11 @@ window.BackroomsGame = (function () {
     onGrow(stage) {
       const msg = ['', 'Ossos estalando no escuro... um atrás do outro. Algo está MUDANDO.', 'Estalos, de novo. Mais altos. Ela está ficando ENORME.'][stage] || '';
       if (msg) toast(msg, 4.5);
-      P.sanity = Math.max(0, P.sanity - 0.08);
       A.stinger(); shake(0.4); glitchPulse = 0.5;
     },
     onGrowJolt(k) { // cada estalo: a câmera treme se você estiver perto
       const near = Math.max(0, 1 - brain.dist / 22);
       shake(0.15 + near * 0.35 * (0.5 + k)); glitchPulse = Math.max(glitchPulse, near * 0.35);
-      if (playerSeesMonster) P.sanity = Math.max(0, P.sanity - 0.012);
     },
     onDrop() { shake(0.9); glitchPulse = 0.8; redPulse = 0.25; setTimeout(() => { redPulse = 0; }, 400); },
     onMonsterShift() { /* reposicionada pelo diretor — invisível para o jogador */ },

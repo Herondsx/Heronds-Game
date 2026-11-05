@@ -4,7 +4,7 @@
    cena -> render target (MSAA quando há WebGL2)
         -> bright-pass + blur gaussiano em 1/4 de resolução (bloom)
         -> composição: aberração cromática, distorção de lente,
-           ondulação (sanidade), glitch/rasgo de VHS, grão de
+           ondulação (transições), glitch/rasgo de VHS, grão de
            filme, scanlines, vinheta, dessaturação, pulso
            vermelho, visão dupla e fade.
    Os shaders de mundo já entregam a cor em espaço de tela
@@ -59,7 +59,7 @@
     '    if (r < uGlitch * 0.55) uv.x += (rnd(vec2(band, 7.0)) - 0.5) * 0.16 * uGlitch;',
     '    uv.y += (rnd(vec2(floor(uTime * 30.0), 1.0)) - 0.5) * 0.01 * uGlitch;',
     '  }',
-    // ondulação (sanidade baixa)
+    // ondulação (atravessando para outro lugar)
     '  uv += uWave * 0.007 * vec2(sin(uv.y * 17.0 + uTime * 1.9), cos(uv.x * 13.0 + uTime * 1.4));',
     // distorção de lente leve
     '  vec2 cc = uv - 0.5; float r2 = dot(cc, cc);',

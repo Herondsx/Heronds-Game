@@ -39,7 +39,7 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 | E | interagir / pegar / ler bilhete |
 | Q (segurar) | prender a respiração |
 | R | trocar as pilhas da lanterna |
-| X | beber água de amêndoa (recupera sanidade) |
+| X | beber água de amêndoa (fôlego cheio e o coração desacelera por 30 s) |
 | G | arremessar garrafa vazia (distração) |
 | M | mapa (só mostra o que você já viu) |
 | Esc | pausa / ajustes |
@@ -60,32 +60,44 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 - **Furtividade de verdade:** cada passo gera um ruído com raio próprio (agachado 2 m, andando 7 m,
   correndo 17 m, na poça ×1,7). A entidade calcula a distância pelo **caminho real** nos corredores.
 - **Prender a respiração:** silencia a sua respiração ofegante. Quando o ar acaba, você arfa alto.
-- **Sanidade:** cai no escuro, ao ver a entidade e durante caçadas. Com sanidade baixa as paredes
-  "respiram", a imagem ondula, você ouve sussurros e passos atrás de você e vê figuras que não existem.
-  Abaixo de 15%, **ela sente o seu medo**.
-- **Água de amêndoa, pilhas, garrafas, bilhetes, rádio, mapa explorado**, além de eventos
-  ambientes (batidas na parede, portas batendo, um telefone antigo tocando, apagões).
+- **Medo:** quando ela está perto ou você a vê, o coração dispara, a respiração fica alta e a imagem
+  treme. (Não existe mais medidor de sanidade.)
+- **Água de amêndoa:** enche o fôlego, acalma o coração e, por 30 s, a corrida cansa pela metade.
+- **Pilhas, garrafas, bilhetes, rádio, mapa explorado**, além de eventos ambientes (batidas na parede,
+  portas batendo, um telefone antigo tocando, apagões).
 
-## A entidade ("O Inquilino") — e ela se TRANSFORMA
+## A entidade ("O Inquilino")
 
-Criatura procedural (`src/creature.js`) com **um único corpo que muda de forma de maneira contínua**
-(parâmetro de 0 a 2), em vez de trocar de modelo:
+Criatura procedural (`src/creature.js`) feita para parecer **um corpo de verdade**, não um boneco de peças:
 
-- **0 — O Magro:** humanoide alto e esquelético, anda em pé.
-- **1 — Aranha:** os braços esticam e viram patas (as mãos se abrem no chão), as pernas dobram ao
-  contrário, o tronco deita, o pescoço segmentado cresce e olhos extras se abrem na testa.
-- **2 — Gigante:** duas pernas novas **brotam das costelas**, um abdômen inchado e cheio de espinhos
-  cresce atrás da pélvis, o tronco fica pendurado de cabeça para baixo e um segundo par de braços
-  arrasta no chão.
-
-**A transformação é uma cena:** ela para, convulsiona e avança na mudança **aos trancos**, e cada tranco
-é um estalo de osso sincronizado (a câmera treme se você estiver perto). Se ela estiver longe, primeiro se
-aproxima fora da sua vista, para você ouvir. Acontece depois do 2º disjuntor (Nível 0) e do 2º fusível
-(Nível 1).
-
-**Física:** IK de 2 ossos + tarso/garra (ou a mão) até o pé; pés **plantados** no mundo, passadas em arco
-em grupos alternados (2, 4 e depois 6 patas); em corredores estreitos as pernas **sobem pelas paredes** e
-ela também anda **pelo teto**; corpo com mola e membros soltos balançando como pêndulos.
+- **Uma única malha contínua, sem emendas.** O corpo é descrito por ~140 formas anatômicas (bacia,
+  costelas, vértebras, escápulas, clavículas, tendões do pescoço, crânio alongado, órbitas fundas,
+  mandíbula, dedos dos pés...) somadas com *união suave* num **campo de distância (SDF)**. O navegador
+  extrai a superfície com *Surface Nets* (cabeça e mãos numa grade bem mais fina, para o close do susto),
+  calcula as normais pelo gradiente do campo, assa a oclusão de ambiente nos vértices e distribui os
+  **pesos de pele** de cada vértice entre os 50 ossos do esqueleto (dedos inclusive). Os dedos são tubos
+  com 2 falanges e garra. Tudo é gerado uma vez, em menos de 1 s, e existe uma versão leve para longe.
+- **Pele procedural no shader:** manchas, veias e poros presos ao corpo (não "escorregam" quando ele
+  se mexe), úmida e brilhante sob a lanterna. Olhos fundos que só devolvem a luz na pupila.
+- **Física/animação procedural:**
+  - marchas por fase: anda **em pé** devagar e curvada, **cai de quatro** para correr (passo lateral) e
+    **galopa** com fase aérea quando caça; levanta para espreitar, ouvir e alcançar lâmpadas;
+  - pés e mãos **plantados no mundo**: o próximo apoio é previsto pela velocidade e pela rotação do corpo,
+    então nada escorrega; o pé rola sobre os dedos ao sair do chão e a bacia desce se uma perna não
+    alcança o apoio (o joelho nunca "estala");
+  - IK analítica de 2 ossos com vetor de polo (joelhos para fora quando de quatro, cotovelos para cima,
+    como um inseto), corpo com mola e amortecedor (inércia, inclina nas curvas e nas freadas) e coluna
+    que se curva seguindo o rastro;
+  - cabeça estabilizada que mira você e gira demais (como uma coruja), inclina para ouvir, espasmos;
+    braços soltos são pêndulos amortecidos que arrastam os dedos no chão;
+  - anda pelo **teto de cabeça para baixo** (a cabeça gira para te olhar), salta para lá e despenca;
+  - a mandíbula **desloca para a frente** quando ela grita; encurva-se sob tetos baixos.
+- **Cresce:** a escala aumenta a cada estágio e a transformação vem **aos trancos** (cada tranco é um estalo
+  de osso sincronizado com uma convulsão). **O Magro** → **O Vigia** (mais alto, olhos novos abrindo na
+  testa, sobe no teto) → **O Abraço** (ainda maior, um segundo par de braços **rasga as costelas** e se
+  estica na sua direção). Acontece depois do 2º disjuntor (Nível 0) e do 2º fusível (Nível 1).
+- **O grito** é a gravação enviada para o projeto (`Assets/sfx/grito.mp3`): mais grave quanto maior ela
+  está, e o som acompanha a cabeça enquanto ela corre.
 
 ### Como ela pensa (`src/ai.js`)
 
@@ -119,8 +131,7 @@ src/postfx.js     pós-processamento: bloom, aberração, grão, VHS, glitch, di
 src/audio.js      áudio 3D procedural (HRTF, reverb, oclusão, todos os efeitos)
 src/shading.js    shaders de iluminação (lightmap + lanterna + neblina)
 src/world.js      geração de níveis, lightmap assado, geometria, colisão, A*, Dijkstra
-src/entity.js     humanoide antigo (usado nas alucinações) + materiais da entidade
-src/creature.js   a criatura que cresce: estágios, IK, pés plantados, paredes e teto
+src/creature.js   a criatura: malha SDF com esqueleto, marchas, IK, física, teto, crescimento
 src/layouts.js    plantas fixas: escritório do prólogo e salão do fim da abertura
 src/ai.js         cérebro da entidade
 src/game.js       jogador, mecânicas, objetivos, interface e laço principal
@@ -137,9 +148,9 @@ src/intro.js      abertura cinematográfica sincronizada com Assets/Audio-intro.
 - Texturas e geometria são geradas na hora (nenhuma imagem externa).
 - **Sons gravados** (`Assets/`, enviados para o projeto) são recortados em `Assets/sfx/`: passos no
   carpete andando e correndo (cada passo é disparado no instante da pisada; a corrida tem cadência 1,3×
-  a da gravação), passos pesados da entidade (mais graves conforme ela cresce), um único clique da
-  lanterna, o grito do jumpscare e um loop sem emenda do zumbido fluorescente. Os efeitos que não têm
-  gravação continuam sintetizados.
+  a da gravação), passos pesados da entidade (mais graves conforme ela cresce), **o grito da entidade**,
+  um único clique da lanterna, o som do jumpscare e um loop sem emenda do zumbido fluorescente. Os
+  efeitos que não têm gravação continuam sintetizados.
 - **Transições sem teletransporte:** ao atravessar a parede do banheiro ou a porta de saída, o mundo
   distorce, as paredes respiram, o som abafa, você atravessa a parede e acorda caído no chão do próximo
   lugar, levantando devagar.

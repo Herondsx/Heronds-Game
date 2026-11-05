@@ -20,22 +20,27 @@
 
   const VERT = [
     BR.GLSL.common,
-    'uniform float uTime; uniform float uBreath; uniform float uGlitch;',
+    'uniform float uTime; uniform float uBreath;',
     'varying vec3 vWorld; varying vec3 vNormal; varying vec2 vUv; varying vec3 vColor;',
+    '#ifdef SKIN',
+    'varying vec3 vBind;',
+    '#endif',
+    // malha com esqueleto (a criatura): trechos de skinning do próprio Three.js
+    '#include <skinning_pars_vertex>',
     'void main(){',
-    '  vec4 wp = modelMatrix * vec4(position, 1.0);',
-    '  vec3 n = normalize(mat3(modelMatrix) * normal);',
+    '  vec3 objectNormal = vec3(normal);',
+    '  vec3 transformed = vec3(position);',
+    '#ifdef SKIN',
+    '  vBind = position;', // posição de repouso: a pele procedural acompanha a deformação
+    '#include <skinbase_vertex>',
+    '#include <skinnormal_vertex>',
+    '#include <skinning_vertex>',
+    '#endif',
+    '  vec4 wp = modelMatrix * vec4(transformed, 1.0);',
+    '  vec3 n = normalize(mat3(modelMatrix) * objectNormal);',
     '#ifdef BREATH',
     '  float b = sin(uTime * 1.3 + wp.x * 0.9 + wp.z * 0.6) * sin(uTime * 0.71 + wp.y * 2.3 + wp.x * 0.3);',
     '  wp.xyz += n * b * uBreath * 0.07;',
-    '#endif',
-    '#ifdef MONSTER',
-    '  float band = floor(wp.y * 7.0 + floor(uTime * 17.0) * 1.3);',
-    '  float gr = hash12(vec2(band, floor(uTime * 26.0)));',
-    '  float on = step(0.82, gr) * uGlitch;',
-    '  wp.x += (hash12(vec2(band, 1.7)) - 0.5) * on * 0.7;',
-    '  wp.z += (hash12(vec2(band, 5.3)) - 0.5) * on * 0.7;',
-    '  wp.xyz += n * sin(uTime * 6.0 + wp.y * 13.0) * 0.006;',
     '#endif',
     '  vWorld = wp.xyz; vNormal = n; vUv = uv;',
     '#ifdef USE_COLOR',
@@ -57,6 +62,15 @@
     'uniform float uSpec; uniform float uShine; uniform float uCeil; uniform float uFogDensity; uniform float uExposure;',
     'uniform float uDirtAmt; uniform float uEmissive; uniform float uTime; uniform float uBump; uniform float uWet;',
     'varying vec3 vWorld; varying vec3 vNormal; varying vec2 vUv; varying vec3 vColor;',
+    '#ifdef SKIN',
+    'varying vec3 vBind;',
+    'float h31(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }',
+    'float vnoise(vec3 x){',
+    '  vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);',
+    '  return mix(mix(mix(h31(i), h31(i + vec3(1.0, 0.0, 0.0)), f.x), mix(h31(i + vec3(0.0, 1.0, 0.0)), h31(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),',
+    '             mix(mix(h31(i + vec3(0.0, 0.0, 1.0)), h31(i + vec3(1.0, 0.0, 1.0)), f.x), mix(h31(i + vec3(0.0, 1.0, 1.0)), h31(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);',
+    '}',
+    '#endif',
     'void main(){',
     '  vec3 Ng = normalize(vNormal);',
     '#ifdef DOUBLE',
@@ -64,7 +78,18 @@
     '#endif',
     '  float fd = length(cameraPosition - vWorld);',
     '  float dirt = texture2D(uDirt, vWorld.xz * 0.043 + vec2(vWorld.y * 0.061, vWorld.y * 0.027)).r;',
-    '#ifdef WORLD_UV',
+    '#if defined(SKIN)',
+    // pele: manchas, veias e poros no espaço do corpo em repouso (não "escorregam" quando ele se mexe)
+    '  vec3 bp = vBind;',
+    // detalhes finos somem com a distância (pelo tamanho do pixel na pele): sem chiado/serrilhado
+    '  float fw = length(fwidth(bp));',
+    '  float k2 = 1.0 - smoothstep(0.012, 0.035, fw), k3 = 1.0 - smoothstep(0.004, 0.012, fw), k4 = 1.0 - smoothstep(0.0012, 0.004, fw);',
+    '  float n1 = vnoise(bp * 6.0), n2 = mix(0.5, vnoise(bp * 21.0 + 3.1), k2), n3 = mix(0.5, vnoise(bp * 64.0 + 7.7), k3), n4 = mix(0.5, vnoise(bp * 190.0 + 1.3), k4);',
+    '  float vein = (1.0 - smoothstep(0.0, 0.055, abs(vnoise(bp * vec3(12.0, 5.0, 12.0) + 9.0) - 0.5))) * smoothstep(0.42, 0.72, n2) * k2;',
+    '  vec3 tex = vec3(0.55, 0.53, 0.5) * (0.9 + 0.16 * n1) * (0.96 + 0.06 * n3);',
+    '  tex = mix(tex, vec3(0.36, 0.29, 0.34), vein * 0.4);',
+    '  tex = mix(tex, tex * vec3(0.8, 0.72, 0.7), smoothstep(0.62, 0.9, n2) * 0.45);',
+    '#elif defined(WORLD_UV)',
     // anti-repetição: 2 amostras (escala/ângulo diferentes) misturadas por um ruído grande
     '  vec2 uv = vWorld.xz * uUvScale;',
     '  vec2 uv2 = mat2(0.799, -0.602, 0.602, 0.799) * uv * 0.71 + vec2(0.37, 0.13);',
@@ -79,7 +104,11 @@
     '  vec3 N = Ng;',
     '#ifdef BUMP',
     // relevo a partir da própria textura (derivadas de tela — sem precisar de tangentes)
+    '#ifdef SKIN',
+    '  float hC = n2 * 0.4 + n3 * 0.5 + n4 * 0.1 * (1.0 - smoothstep(0.4, 1.5, fd)) - vein * 0.3;',
+    '#else',
     '  float hC = dot(tex, vec3(0.333));',
+    '#endif',
     '  vec3 dpdx = dFdx(vWorld), dpdy = dFdy(vWorld);',
     '  float dhdx = dFdx(hC), dhdy = dFdy(hC);',
     '  vec3 r1 = cross(dpdy, Ng), r2 = cross(Ng, dpdx);',
@@ -124,8 +153,11 @@
     '  col += uLampColor * pow(max(dot(N, normalize(vec3(0.0, 1.0, 0.0) + V)), 0.0), uShine) * spec * direct * 0.2;',
     '  col += alb * uEmissive;',
     '#ifdef EYE',
-    '  float facing = pow(max(dot(N, V), 0.0), 2.0);',
-    '  col = uTint * (uEmissive + 14.0 * fl * facing);',
+    // olho úmido e escuro; só a pupila devolve a luz (como olho de bicho na lanterna)
+    '  float facing = max(dot(N, V), 0.0);',
+    '  float pupil = smoothstep(0.955, 0.99, facing);',
+    '  col = uTint * 0.006 * (light + uFlashColor * fl) + uTint * pupil * (uEmissive * 0.6 + 6.0 * fl);',
+    '  col += uFlashColor * pow(max(dot(N, H), 0.0), 90.0) * fl * 2.0;',
     '#endif',
     // neblina
     '  float fog = 1.0 - exp(-fd * fd * uFogDensity * uFogDensity);',
@@ -235,7 +267,7 @@
     return S.uniforms;
   };
 
-  // opts: map, tint (hex/Color), uvScale [u,v], worldUV, breath, monster, eye, spec, shine, dirt, emissive, double
+  // opts: map, tint (hex/Color), uvScale [u,v], worldUV, breath, skin, eye, spec, shine, dirt, emissive, double, bump, wet
   S.material = function (opts) {
     opts = opts || {};
     const u = S.init();
@@ -252,7 +284,7 @@
     const defines = {};
     if (opts.worldUV) defines.WORLD_UV = 1;
     if (opts.breath) defines.BREATH = 1;
-    if (opts.monster) defines.MONSTER = 1;
+    if (opts.skin) defines.SKIN = 1;
     if (opts.eye) defines.EYE = 1;
     if (opts.double) defines.DOUBLE = 1;
     if (opts.bump) defines.BUMP = 1;
@@ -263,6 +295,7 @@
       side: opts.double ? THREE.DoubleSide : THREE.FrontSide,
       extensions: { derivatives: true },
     });
+    if (opts.skin) m.skinning = true; // SkinnedMesh: o Three.js liga USE_SKINNING e envia os ossos
     return m;
   };
 

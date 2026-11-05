@@ -40,7 +40,7 @@
     chase: 'CAÇANDO', search: 'PROCURANDO', ambush: 'EMBOSCADA', flinch: 'OFUSCADA', breakLamp: 'APAGANDO LUZ',
     blackout: 'APAGANDO AS SUAS LUZES', transform: 'TRANSFORMANDO',
   };
-  const STAGE_NAME = ['O MAGRO', 'ARANHA', 'GIGANTE'];
+  const STAGE_NAME = BR.Creature.STAGE_NAMES;
 
   function Brain(game, entity) {
     this.g = game;
@@ -85,7 +85,7 @@
     this.curSpeed = 0; this.stepAcc = 0; this.lunging = 0; this.vis = 0; this.hasLOS = false; this.losT = 0;
     this.searchPlan = []; this.ambush = null; this.lampTarget = null; this.repathT = 0;
     this.heatT = 0; this.flanking = false; this.flinchT = 0; this.reachT = 0;
-    this.lookAt = null;
+    this.lookAt = null; this.screamT = 0; this.screamCh = null;
   };
   B.place = function (tile) {
     const c = this.w.center(tile);
@@ -188,12 +188,6 @@
 
     const noises = this.g.takeNoises();
     for (const n of noises) this.hear(n);
-
-    // sanidade quebrada: ela sente o seu medo
-    if (P.sanity < 0.15 && this.state === 'patrol' && Math.random() < dt * 0.12) {
-      this.setInterest(P.x + U.rand(-5, 5), P.z + U.rand(-5, 5), 0.7, 'medo');
-      this.think('Sinto o seu medo daqui.');
-    }
   };
 
   B.see = function (P) {
@@ -218,7 +212,7 @@
     if (this.state === 'dormant' && n.r < 25) return;
     const w = this.w;
     const eu = Math.hypot(n.x - this.pos.x, n.z - this.pos.z);
-    const mul = (1 + this.aggression * 0.3) * (this.g.player.sanity < 0.3 ? 1.3 : 1);
+    const mul = 1 + this.aggression * 0.3;
     const R = n.r * mul;
     if (eu > R) return;
     let pd;
@@ -356,7 +350,7 @@
             if (Math.random() > this.mem.flinchTol) {
               this.mem.flinchTol = Math.min(0.9, this.mem.flinchTol + 0.3);
               this.set('flinch', this.mem.flinchTol < 0.5 ? 'A LUZ! ...' : 'A luz ainda me incomoda. Por pouco tempo.');
-              A.screech(this.pos.x, 2.3, this.pos.z, 0.6);
+              this.scream(0.75, 1.9);
               break;
             } else this.think('A luz não me para mais.');
           }
@@ -463,7 +457,7 @@
     this.set('chase', why || 'CAÇANDO.');
     this.awareness = 1.2; this.lostT = 0; this.repathT = 0;
     if (first) {
-      if (this.cool.screech <= 0) { A.screech(this.pos.x, 2.3, this.pos.z, 1); this.cool.screech = 14; }
+      if (this.cool.screech <= 0) { this.scream(1, 0); this.cool.screech = 16; }
       this.g.onChaseStart();
     }
   };
@@ -628,11 +622,11 @@
     this.e.onJolt = function (i, n) {
       A.boneSnap(self.pos.x, 1.4, self.pos.z, 0.6 + (i / n) * 0.6);
       if (self.g.onGrowJolt) self.g.onGrowJolt(i / n);
-      if (i === Math.ceil(n / 2)) self.think('Os braços... estão virando outra coisa.');
+      if (i === Math.ceil(n / 2)) self.think(next === 1 ? 'Olhos novos abrindo na minha testa. Agora eu vejo tudo.' : 'As costelas... estão se abrindo. Tem braços aqui dentro.');
     };
     this.e.transformTo(next, 5.0, function () {
       self.e.growth = 0;
-      A.screech(self.pos.x, 2, self.pos.z, 1.1);
+      self.scream(1.15, 0);
       self.aggression = Math.min(1, self.aggression + 0.1);
       self.think('Estou maior agora. ' + STAGE_NAME[self.e.stage] + '.');
       if (self.g.onGrowEnd) self.g.onGrowEnd(self.e.stage);
@@ -640,6 +634,13 @@
     if (this.g.onGrow) this.g.onGrow(next);
   };
   B.stageName = function () { return STAGE_NAME[this.e.stage] || ''; };
+
+  // o grito gravado: mais grave quanto maior ela está; o som acompanha a cabeça enquanto dura
+  B.scream = function (vol, short) {
+    const ch = A.screech(this.pos.x, 1.7 * this.e.scale, this.pos.z, vol, { short: short || 0, rate: 1.06 - 0.09 * this.e.stage });
+    this.screamCh = ch;
+    this.screamT = short || 5;
+  };
 
   B.tryBreakLamp = function () {
     if (this.lampBudget <= 0 || this.cool.lamp > 0 || Math.random() > 0.4) return false;
@@ -786,6 +787,15 @@
   };
   B.sounds = function (dt) {
     const s = this.state;
+    this.screamT = Math.max(0, (this.screamT || 0) - dt);
+    if (this.screamCh) {
+      if (A.now() > this.screamCh.until) this.screamCh = null;
+      else {
+        this.e.head.getWorldPosition(this._hp || (this._hp = new THREE.Vector3()));
+        this.screamCh.setPos(this._hp.x, this._hp.y, this._hp.z);
+        this.screamCh.setOcc(this.g.occlusion(this.pos.x, this.pos.z));
+      }
+    }
     if (this.voice) {
       const lvl = { dormant: 0.08, patrol: 0.32, investigate: 0.38, stalk: 0.03, retreat: 0.1, chase: 0.75, search: 0.5, ambush: 0.02, flinch: 0.6, breakLamp: 0.3 }[s] || 0.2;
       const rate = s === 'chase' ? 1.5 : s === 'search' ? 0.8 : 0.38;
@@ -817,16 +827,14 @@
       ceiling: this.onCeiling,
       reachTarget: this.lampTarget ? new THREE.Vector3(this.lampTarget.x, this.w.CEIL - 0.05, this.lampTarget.z) : null,
       listen: (this.arrived && (s === 'patrol' || s === 'investigate' || s === 'search')) || s === 'ambush',
-      mouth: s === 'flinch' ? 1 : s === 'chase' ? (this.lunging > 0 ? 0.9 : 0.3) : 0,
+      mouth: this.screamT > 0 ? 1 : s === 'flinch' ? 1 : s === 'chase' ? (this.lunging > 0 ? 0.9 : 0.3) : 0,
       reach: s === 'breakLamp' && this.arrived ? 1 : 0,
       flinch: s === 'flinch' ? 1 : 0,
       agitation: s === 'chase' ? 1 : s === 'search' ? 0.6 : s === 'flinch' ? 1 : 0.25,
       jerky: seen && this.dist < 12 ? 1 : s === 'chase' ? 0.35 : 0,
       eyeGlow: s === 'chase' ? 1.4 : s === 'stalk' || s === 'ambush' ? 0.02 : 0.3,
+      camDist: this.dist,
     });
-    if (seen && this.dist < 12 && Math.random() < 0.15) {
-      e.root.position.x += U.rand(-0.06, 0.06); e.root.position.z += U.rand(-0.06, 0.06);
-    }
   };
 
   // intensidade da oscilação das lâmpadas causada por ela

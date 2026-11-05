@@ -223,10 +223,8 @@ canvas { display: block; }
 #hud .bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #b8963e, #e8c873); transition: width 0.12s linear; }
 #hud .bar i.low { background: #b03030; }
 #hud .bar.breath i { background: linear-gradient(90deg, #4f7fa8, #9fd0ff); }
-#hud .bar.sanity i { background: linear-gradient(90deg, #6b4f8a, #b79be0); }
-#hud .bar.sanity i.low { background: #8a2a5a; animation: pulse 0.8s infinite; }
 #wrap-breath { transition: opacity 0.4s; opacity: 0; }
-#hud.prologue #wrap-sanity, #hud.prologue .right { display: none; }
+#hud.prologue .right { display: none; }
 #hud .right { position: fixed; right: 24px; bottom: 22px; text-align: right; font-size: 0.72rem; letter-spacing: 0.12em; color: #cbb67a; text-shadow: 0 0 6px #000; }
 #hud .battery { display: flex; align-items: center; gap: 8px; justify-content: flex-end; margin-bottom: 8px; }
 #hud .battery .cell { position: relative; width: 52px; height: 16px; border: 2px solid #b8a468; border-radius: 3px; padding: 2px; }

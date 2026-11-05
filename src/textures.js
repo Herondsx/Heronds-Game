@@ -418,19 +418,6 @@
     return c;
   };
   // pele da entidade: quase preta, manchada, com veias
-  Tex.skin = function () {
-    const S = 256, c = canvas(S);
-    const f = fbmField(S, 6, 5, 111), g = fbmField(S, 30, 2, 112);
-    const x = paintBase(c, [34, 31, 30], [{ f, amt: 0.9 }, { f: g, amt: 0.3 }], 0.15);
-    x.strokeStyle = 'rgba(70,20,25,0.35)'; x.lineWidth = 1.3;
-    for (let i = 0; i < 26; i++) {
-      let px = Math.random() * S, py = Math.random() * S;
-      x.beginPath(); x.moveTo(px, py);
-      for (let j = 0; j < 6; j++) { px += (Math.random() - 0.5) * 30; py += (Math.random() - 0.5) * 30; x.lineTo(px, py); }
-      x.stroke();
-    }
-    return c;
-  };
   Tex.white = function () {
     const c = canvas(4), x = c.getContext('2d');
     x.fillStyle = '#fff'; x.fillRect(0, 0, 4, 4);
