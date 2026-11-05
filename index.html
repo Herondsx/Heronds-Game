@@ -3,108 +3,172 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="description" content="THE BACKROOMS — caia para fora da realidade." />
+  <meta name="description" content="THE BACKROOMS — caia para fora da realidade. Um jogo de terror em primeira pessoa no navegador." />
   <title>THE BACKROOMS — Nível 0</title>
   <link rel="stylesheet" href="backrooms.css" />
 </head>
 <body>
-  <!-- O canvas WebGL do jogo (Three.js) é criado por backrooms.js e fica no fundo -->
+  <!-- O canvas WebGL do jogo (Three.js) é criado por src/game.js e fica no fundo -->
 
-  <!-- ============ INTRO CINEMATOGRÁFICA (Canvas 2D) ============ -->
+  <!-- ============ INTRO CINEMATOGRÁFICA ============ -->
   <div id="intro">
     <canvas id="intro-canvas"></canvas>
     <div id="lore-text"></div>
+    <div id="vhs-osd">
+      <div class="play">▶ PLAY</div>
+      <div class="tc" id="vhs-tc">SP 00:00:00</div>
+      <div class="date">NOV. 05 1996</div>
+    </div>
     <button id="skip-intro">pular intro ⏭</button>
   </div>
 
-  <!-- ============ TELA DE TÍTULO (antes da intro) ============ -->
+  <!-- ============ TELA DE TÍTULO ============ -->
   <div id="title-screen">
+    <div class="tube"></div>
     <div class="title-box">
-      <h1>BACKROOMS</h1>
-      <div class="sub">— NÍVEL 0 · "ALMOND WATER" —</div>
-      <p class="warn">Use fones de ouvido 🎧</p>
+      <h1 data-text="BACKROOMS">BACKROOMS</h1>
+      <div class="sub">— NÍVEL 0 · O SAGUÃO —</div>
+      <p class="warn">⚠ Contém sustos, luzes piscando e sons altos.<br />Use fones de ouvido 🎧 — o som é 3D e te avisa de onde ele vem.</p>
       <div class="blink">▶ CLIQUE PARA COMEÇAR</div>
     </div>
   </div>
 
-  <!-- ============ CAMADA DE UI DO JOGO ============ -->
-  <div id="ui-layer">
-    <!-- Menu que aparece DEPOIS da intro (entrada no jogo) -->
-    <div id="start-menu">
-      <h1>VOCÊ NO-CLIPOU</h1>
-      <div class="sub">— PARA FORA DA REALIDADE —</div>
-      <div class="keys">
-        <b>MOUSE</b><span>Olhar ao redor</span>
-        <b>W A S D</b><span>Mover</span>
-        <b>SHIFT</b><span>Correr</span>
-        <b>E</b><span>Interagir</span>
-      </div>
-      <p class="brief">
-        Encontre a <b class="green">SAÍDA verde</b> e fuja.<br />
-        <b class="red">Algo</b> caminha por estes corredores.<br />Não deixe te alcançar.
-      </p>
-      <div class="hint">O som te dirá de onde ele vem.</div>
-      <div class="blink">▶ CLIQUE PARA ACORDAR</div>
+  <!-- ============ MENU DE ENTRADA (após a intro) ============ -->
+  <div id="start-menu">
+    <h1>VOCÊ NO-CLIPOU</h1>
+    <div class="sub">— PARA FORA DA REALIDADE —</div>
+    <div class="keys">
+      <b>MOUSE</b><span>olhar</span>
+      <b>W A S D</b><span>mover</span>
+      <b>SHIFT</b><span>correr <em>(barulho!)</em></span>
+      <b>C</b><span>agachar <em>(silencioso)</em></span>
+      <b>F</b><span>lanterna</span>
+      <b>E</b><span>interagir / ler</span>
+      <b>Q</b><span>segurar: prender a respiração</span>
+      <b>R</b><span>trocar pilhas</span>
+      <b>X</b><span>beber água de amêndoa</span>
+      <b>G</b><span>arremessar garrafa vazia</span>
+      <b>M</b><span>mapa</span>
+      <b>F3</b><span>ver o "pensamento" da entidade</span>
     </div>
+    <p class="brief">
+      Religue a energia e encontre a <b class="green">SAÍDA</b>.<br />
+      <b class="red">Algo</b> caminha por estes corredores. Ele <u>ouve</u> seus passos,
+      <u>enxerga</u> na luz, <u>aprende</u> com seus truques e prepara emboscadas.
+    </p>
+    <div class="hint">As lâmpadas piscam quando ele está perto. Quase sempre.</div>
+    <button class="menu-btn small" id="btn-start-settings">⚙ AJUSTES</button>
+    <div class="blink">▶ CLIQUE PARA ACORDAR</div>
+  </div>
 
-    <div id="crosshair"></div>
-    <div id="objective">▸ ENCONTRE A SAÍDA</div>
-    <div id="compass">
-      <div id="compass-arrow">▲</div>
-      <div id="compass-dist">SAÍDA</div>
-    </div>
-    <div id="interaction-msg">Pressione [ E ] para atravessar a saída</div>
-
-    <div id="hud">
+  <!-- ============ HUD ============ -->
+  <div id="crosshair"></div>
+  <div id="objective"></div>
+  <div id="rec"><span class="dot">●</span> REC <span id="rec-time">00:00:00</span></div>
+  <div id="toast"></div>
+  <div id="prompt"></div>
+  <div id="hud">
+    <div class="left">
       <div class="label">FÔLEGO</div>
-      <div id="stamina-wrap"><div id="stamina"></div></div>
+      <div class="bar"><i id="bar-stamina"></i></div>
+      <div id="wrap-breath">
+        <div class="label">AR</div>
+        <div class="bar breath"><i id="bar-breath"></i></div>
+      </div>
+      <div class="label">SANIDADE</div>
+      <div class="bar sanity"><i id="bar-sanity"></i></div>
+    </div>
+    <div class="right">
+      <div class="battery"><div class="cell"><i id="battery-fill"></i></div><span id="battery-pct">100%</span></div>
+      <div id="inv"></div>
     </div>
   </div>
 
-  <div id="vignette"></div>
-  <div id="flash"></div>
-  <div id="jumpscare"></div>
+  <div id="level-title"><h1 id="lt-name"></h1><div id="lt-sub"></div></div>
 
+  <div id="note-overlay"><div class="paper"><p id="note-text"></p><small>[E] ou clique para fechar — o jogo NÃO pausa enquanto você lê</small></div></div>
+
+  <div id="map-overlay">
+    <canvas id="map-canvas"></canvas>
+    <div class="legend">▲ você · ⚡ disjuntor · ◆ fusível · ⚙ gerador · ▣ saída — o mapa só mostra o que você já viu · [M] fecha</div>
+  </div>
+
+  <div id="debug"></div>
+
+  <!-- ============ PAUSA / AJUSTES ============ -->
+  <div id="pause-menu">
+    <h1>PAUSADO</h1>
+    <p class="sub">o zumbido continua lá fora.</p>
+    <button class="menu-btn" id="btn-resume">▶ CONTINUAR</button>
+    <button class="menu-btn" id="btn-settings">⚙ AJUSTES</button>
+    <button class="menu-btn" id="btn-restart">↺ REINICIAR NÍVEL</button>
+    <button class="menu-btn" id="btn-quit">✕ VOLTAR AO TÍTULO</button>
+    <p class="tip">Dica: F3 mostra o estado e os "pensamentos" da entidade em tempo real.</p>
+  </div>
+
+  <div id="settings">
+    <h2>AJUSTES</h2>
+    <label>Sensibilidade do mouse <span id="set-sens-v"></span><input type="range" id="set-sens" min="0.3" max="2.5" step="0.05" /></label>
+    <label>Volume <span id="set-vol-v"></span><input type="range" id="set-vol" min="0" max="1" step="0.01" /></label>
+    <label>Brilho <span id="set-bright-v"></span><input type="range" id="set-bright" min="0.6" max="1.8" step="0.02" /></label>
+    <label>Efeitos de tela (VHS, grão, distorção) <span id="set-fx-v"></span><input type="range" id="set-fx" min="0" max="1" step="0.05" /></label>
+    <label>Resolução (desempenho) <span id="set-quality-v"></span><input type="range" id="set-quality" min="0.4" max="1" step="0.05" /></label>
+    <div class="calib"><span></span><span></span><span></span><p>Ajuste o brilho até o quadrado da esquerda ficar QUASE invisível.</p></div>
+    <button class="menu-btn" id="btn-settings-back">VOLTAR</button>
+  </div>
+
+  <!-- ============ TELAS FINAIS ============ -->
   <div id="caught-screen">
     <h1>ELE TE ENCONTROU</h1>
-    <p>respirando fundo... voltando ao início...</p>
+    <p id="caught-sub">respirando fundo...</p>
   </div>
 
   <div id="win-screen">
     <h1>VOCÊ ESCAPOU</h1>
-    <p>...mas os Fundos não esquecem quem já caiu.</p>
+    <p>...mas os Fundos não esquecem quem já caiu. E ela também não.</p>
+    <div id="win-stats"></div>
     <button id="win-restart" class="menu-btn">DESCER DE NOVO</button>
   </div>
 
+  <div id="flash"></div>
   <div id="fade"></div>
 
   <!-- Áudio da intro (pasta Assets — atenção à maiúscula no GitHub Pages) -->
   <audio id="intro-audio" src="Assets/Audio-intro.mp3" preload="auto"></audio>
 
-  <!-- Three.js via CDN (o GitHub Pages serve o HTML; o navegador baixa a lib) -->
+  <!-- Three.js r128 via CDN (build global) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="intro.js"></script>
-  <script src="backrooms.js"></script>
+  <script src="src/core.js"></script>
+  <script src="src/textures.js"></script>
+  <script src="src/postfx.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/shading.js"></script>
+  <script src="src/world.js"></script>
+  <script src="src/entity.js"></script>
+  <script src="src/ai.js"></script>
+  <script src="src/game.js"></script>
+  <script src="src/intro.js"></script>
   <script>
     /* ============ ORQUESTRAÇÃO DO FLUXO ============
-       título → intro (áudio) → menu do jogo → jogo */
+       título -> intro (áudio) -> menu do jogo -> jogo */
     (function () {
-      const titleScreen = document.getElementById('title-screen');
-      const introEl = document.getElementById('intro');
-      const introAudio = document.getElementById('intro-audio');
+      var titleScreen = document.getElementById('title-screen');
+      var introEl = document.getElementById('intro');
+      var introAudio = document.getElementById('intro-audio');
 
       function beginIntro() {
+        // o clique é o gesto que libera o áudio do navegador
+        window.BR.Audio.init();
         titleScreen.classList.add('hide');
-        setTimeout(() => (titleScreen.style.display = 'none'), 600);
+        setTimeout(function () { titleScreen.style.display = 'none'; }, 700);
         window.Intro.start(introAudio, onIntroDone);
       }
 
       function onIntroDone() {
-        // Para o áudio da intro, esconde a intro e sobe o jogo
         try { introAudio.pause(); } catch (e) {}
         introEl.classList.add('gone');
-        setTimeout(() => (introEl.style.display = 'none'), 1300);
-        // O motor 3D do jogo só é montado agora (evita 2 contextos WebGL)
+        setTimeout(function () { introEl.style.display = 'none'; }, 1300);
+        // o motor 3D do jogo só é montado agora (evita 2 contextos WebGL ao mesmo tempo)
         window.BackroomsGame.init();
         window.BackroomsGame.revealMenu();
       }
