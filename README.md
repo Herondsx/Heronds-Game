@@ -8,12 +8,26 @@ Você "no-clipou" para fora da realidade. Religue a energia, encontre a saída e
 
 ## Como jogar
 
-Abra pelo GitHub Pages ou sirva a pasta localmente (o áudio não funciona via `file://`):
+Online: **https://herondsx.github.io/Heronds-Game/**
+
+Ou sirva a pasta localmente (o áudio não funciona abrindo o arquivo direto, via `file://`):
 
 ```bash
 python3 -m http.server 8000
 # abra http://localhost:8000
 ```
+
+### Publicação no GitHub Pages
+
+O jogo é 100% estático (HTML + CSS + JavaScript rodando no navegador), que é exatamente o que o
+GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
+
+- **Settings → Pages → Build and deployment:** *Deploy from a branch*, branch `main`, pasta `/ (root)`.
+- O arquivo vazio `.nojekyll` desliga o Jekyll: o Pages publica os arquivos exatamente como estão.
+- Todos os caminhos são **relativos** e respeitam maiúsculas/minúsculas (`Assets/` com A maiúsculo,
+  `src/` minúsculo). Isso é obrigatório, porque o site fica em `/Heronds-Game/` e o servidor diferencia letras.
+- O Three.js r128 vem do CDN (cdnjs, HTTPS). O restante é gerado no próprio navegador.
+- Tamanho total ≈ 19 MB (o limite do Pages é 1 GB por site).
 
 | Tecla | Ação |
 |---|---|
