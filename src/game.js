@@ -1903,10 +1903,15 @@ window.BackroomsGame = (function () {
     onChaseStart() { A.stinger(); shake(0.3); glitchPulse = 0.4; },
     onLampBroken() { shake(0.1); },
     onGrow(stage) {
-      const msg = ['', 'Ossos estalando no escuro. Ela não anda mais em pé.', 'Algo ENORME se arrasta pelas paredes.'][stage] || '';
+      const msg = ['', 'Ossos estalando no escuro... um atrás do outro. Algo está MUDANDO.', 'Estalos, de novo. Mais altos. Ela está ficando ENORME.'][stage] || '';
       if (msg) toast(msg, 4.5);
       P.sanity = Math.max(0, P.sanity - 0.08);
       A.stinger(); shake(0.4); glitchPulse = 0.5;
+    },
+    onGrowJolt(k) { // cada estalo: a câmera treme se você estiver perto
+      const near = Math.max(0, 1 - brain.dist / 22);
+      shake(0.15 + near * 0.35 * (0.5 + k)); glitchPulse = Math.max(glitchPulse, near * 0.35);
+      if (playerSeesMonster) P.sanity = Math.max(0, P.sanity - 0.012);
     },
     onDrop() { shake(0.9); glitchPulse = 0.8; redPulse = 0.25; setTimeout(() => { redPulse = 0; }, 400); },
     onMonsterShift() { /* reposicionada pelo diretor — invisível para o jogador */ },

@@ -538,6 +538,32 @@
     chain(g, lp, env(t0, 0.6, 0.6, 2.2), o);
   };
 
+  // um estalo de osso seco (cada tranco da metamorfose)
+  A.boneSnap = function (x, y, z, vol) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y, z], 1.2, { ref: 2.2, roll: 0.9, rev: 0.6 }), v = vol || 1;
+    chain(noise(A.white, t, 0.06), filt('bandpass', U.rand(1800, 3200), 3), env(t, 0.001, 0.9 * v, 0.03), o);
+    chain(noise(A.white, t + 0.012, 0.05), filt('bandpass', U.rand(700, 1300), 5), env(t + 0.012, 0.001, 0.6 * v, 0.05), o);
+    const th = osc('sine', U.rand(90, 130), t, 0.25); th.frequency.exponentialRampToValueAtTime(40, t + 0.15);
+    chain(th, env(t, 0.002, 0.8 * v, 0.18), o);
+    for (let i = 0; i < 4; i++) { const tt = t + 0.05 + Math.random() * 0.25; chain(noise(A.white, tt, 0.02), filt('bandpass', U.rand(1500, 4000), 6), env(tt, 0.001, 0.25 * v, 0.012), o); }
+  };
+  // gemido grave e crescente da transformação
+  A.transformGroan = function (x, y, z, dur) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y, z], dur + 0.6, { ref: 2.5, roll: 0.85, rev: 0.6 });
+    const lp = filt('lowpass', 300, 3); lp.frequency.linearRampToValueAtTime(900, t + dur);
+    for (const [f0, d] of [[52, 0], [55, 12], [78, -9]]) {
+      const s1 = osc('sawtooth', f0, t, dur + 0.2); s1.detune.value = d;
+      for (let i = 1; i <= 8; i++) s1.frequency.linearRampToValueAtTime(f0 * (1 + i * 0.07) * U.rand(0.92, 1.08), t + (i / 8) * dur);
+      s1.connect(lp);
+    }
+    const am = osc('sine', 9, t, dur + 0.2), amg = A.ctx.createGain(); amg.gain.value = 0.35;
+    const g = A.ctx.createGain(); g.gain.value = 0.6; am.connect(amg); amg.connect(g.gain);
+    chain(lp, g, env(t, 1.2, 0.55, dur - 1.0, 0.4), o);
+    chain(noise(A.pink, t, dur), filt('bandpass', 500, 1.2), env(t, 1.5, 0.12, dur - 1.4), o);
+  };
+
   // cliques guturais (o som característico da entidade)
   A.clicks = function (x, y, z, n, vol) {
     if (!A.ctx) return;

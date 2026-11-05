@@ -66,19 +66,26 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 - **Água de amêndoa, pilhas, garrafas, bilhetes, rádio, mapa explorado**, além de eventos
   ambientes (batidas na parede, portas batendo, um telefone antigo tocando, apagões).
 
-## A entidade ("O Inquilino") — e ela CRESCE
+## A entidade ("O Inquilino") — e ela se TRANSFORMA
 
-Criatura procedural com **física de pernas em IK** (`src/creature.js`), em três estágios:
+Criatura procedural (`src/creature.js`) com **um único corpo que muda de forma de maneira contínua**
+(parâmetro de 0 a 2), em vez de trocar de modelo:
 
-1. **O Magro** — humanoide alto e esquelético, anda em pé.
-2. **Aranha** — os braços viraram pernas: anda de quatro, joelhos acima do corpo, pescoço comprido.
-3. **Gigante** — seis pernas longuíssimas, corpo no alto e um tronco humano pendurado de cabeça para
-   baixo, com os braços arrastando no chão.
+- **0 — O Magro:** humanoide alto e esquelético, anda em pé.
+- **1 — Aranha:** os braços esticam e viram patas (as mãos se abrem no chão), as pernas dobram ao
+  contrário, o tronco deita, o pescoço segmentado cresce e olhos extras se abrem na testa.
+- **2 — Gigante:** duas pernas novas **brotam das costelas**, um abdômen inchado e cheio de espinhos
+  cresce atrás da pélvis, o tronco fica pendurado de cabeça para baixo e um segundo par de braços
+  arrasta no chão.
 
-Os pés ficam **plantados** no mundo e só se movem quando o corpo se afasta (passada em arco, grupos
-alternados). Em corredores estreitos as pernas **sobem pelas paredes**, e ela também anda **pelo teto**.
-O corpo tem mola (afunda a cada passo pesado) e os braços balançam como pêndulos. Ela muda de forma
-longe dos seus olhos: depois do 2º disjuntor no Nível 0 e do 2º fusível no Nível 1.
+**A transformação é uma cena:** ela para, convulsiona e avança na mudança **aos trancos**, e cada tranco
+é um estalo de osso sincronizado (a câmera treme se você estiver perto). Se ela estiver longe, primeiro se
+aproxima fora da sua vista, para você ouvir. Acontece depois do 2º disjuntor (Nível 0) e do 2º fusível
+(Nível 1).
+
+**Física:** IK de 2 ossos + tarso/garra (ou a mão) até o pé; pés **plantados** no mundo, passadas em arco
+em grupos alternados (2, 4 e depois 6 patas); em corredores estreitos as pernas **sobem pelas paredes** e
+ela também anda **pelo teto**; corpo com mola e membros soltos balançando como pêndulos.
 
 ### Como ela pensa (`src/ai.js`)
 

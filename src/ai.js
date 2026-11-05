@@ -38,7 +38,7 @@
   const LABEL = {
     dormant: 'DORMENTE', patrol: 'PATRULHA', investigate: 'INVESTIGANDO', stalk: 'ESPREITANDO', retreat: 'RECUANDO',
     chase: 'CAÇANDO', search: 'PROCURANDO', ambush: 'EMBOSCADA', flinch: 'OFUSCADA', breakLamp: 'APAGANDO LUZ',
-    blackout: 'APAGANDO AS SUAS LUZES',
+    blackout: 'APAGANDO AS SUAS LUZES', transform: 'TRANSFORMANDO',
   };
   const STAGE_NAME = ['O MAGRO', 'ARANHA', 'GIGANTE'];
 
@@ -129,7 +129,7 @@
     if (this.frozen || this.disabled) return;
     // cresce devagar o tempo todo; muda de forma quando o jogo pede (fora da sua vista)
     this.e.growth = Math.min(1, this.e.growth + dt / 360);
-    if (this.pendingGrow && !this.g.playerSeesMonster && this.dist > 7) this.grow();
+    if (this.pendingGrow && this.state !== 'chase' && this.state !== 'flinch' && this.state !== 'blackout' && this.state !== 'transform' && this.dist > 7) this.grow();
     this.time += dt; this.stateT += dt;
     for (const k in this.cool) this.cool[k] -= dt;
     this.perceive(dt);
@@ -368,6 +368,14 @@
         break;
       }
 
+      case 'transform':
+        // parada, convulsionando; a criatura controla o próprio tempo
+        if (!this.e.transforming()) {
+          if (this.awareness >= 1 && this.hasLOS) this.startChase('Agora você vai ver do que eu sou capaz.');
+          else { this.set('patrol', 'Pronto. ' + STAGE_NAME[this.e.stage] + '.'); this.waitT = 1; }
+        }
+        break;
+
       case 'flinch':
         if (this.stateT > 1.2) this.set('chase');
         break;
@@ -598,15 +606,38 @@
     return true;
   };
 
+  // METAMORFOSE: ela para onde está e muda de forma aos trancos.
+  // Se estiver longe, antes se aproxima (fora da sua vista) para você OUVIR os ossos.
   B.grow = function () {
     this.pendingGrow = false;
-    if (this.e.stage >= 2) return;
-    this.e.setStage(this.e.stage + 1);
-    this.e.growth = 0;
-    A.bonesCrack(this.pos.x, 1.5, this.pos.z);
-    this.think('Estou maior agora. ' + STAGE_NAME[this.e.stage] + '.');
-    this.aggression = Math.min(1, this.aggression + 0.1);
-    if (this.g.onGrow) this.g.onGrow(this.e.stage);
+    if (this.e.stage >= 2 || this.e.transforming()) return;
+    const df = this.g.distField, w = this.w, P = this.g.player;
+    if (df && !(df[w.tileOf(this.pos.x, this.pos.z)] < 30)) {
+      const cands = [];
+      for (let i = 0; i < df.length; i++) {
+        if (!(df[i] > 14 && df[i] < 24)) continue;
+        const c = w.center(i);
+        if (!w.los(P.x, P.z, c.x, c.z)) cands.push(i);
+      }
+      if (cands.length) this.place(U.pick(cands));
+    }
+    this.path = null; this.arrived = true; this.onCeiling = false;
+    const next = this.e.stage + 1, self = this;
+    this.set('transform', 'Algo está quebrando dentro de mim... e crescendo.');
+    A.transformGroan(this.pos.x, 1.6, this.pos.z, 5.2);
+    this.e.onJolt = function (i, n) {
+      A.boneSnap(self.pos.x, 1.4, self.pos.z, 0.6 + (i / n) * 0.6);
+      if (self.g.onGrowJolt) self.g.onGrowJolt(i / n);
+      if (i === Math.ceil(n / 2)) self.think('Os braços... estão virando outra coisa.');
+    };
+    this.e.transformTo(next, 5.0, function () {
+      self.e.growth = 0;
+      A.screech(self.pos.x, 2, self.pos.z, 1.1);
+      self.aggression = Math.min(1, self.aggression + 0.1);
+      self.think('Estou maior agora. ' + STAGE_NAME[self.e.stage] + '.');
+      if (self.g.onGrowEnd) self.g.onGrowEnd(self.e.stage);
+    });
+    if (this.g.onGrow) this.g.onGrow(next);
   };
   B.stageName = function () { return STAGE_NAME[this.e.stage] || ''; };
 
@@ -687,9 +718,9 @@
 
   B.speedFor = function () {
     const c = this.cfg, s = this.state;
-    if (s === 'dormant' || s === 'flinch' || s === 'blackout' || (s === 'breakLamp' && this.arrived)) return 0;
+    if (s === 'dormant' || s === 'flinch' || s === 'blackout' || s === 'transform' || (s === 'breakLamp' && this.arrived)) return 0;
     if (this.arrived) return 0;
-    return this.baseSpeed(c, s) * this.e.cfg.speedMul * (this.onCeiling ? 0.8 : 1);
+    return this.baseSpeed(c, s) * this.e.speedMul() * (this.onCeiling ? 0.8 : 1);
   };
   B.baseSpeed = function (c, s) {
     if (s === 'chase') return c.run * (1 + this.aggression * 0.12) * (this.lunging > 0 ? 1.45 : 1);
@@ -801,10 +832,10 @@
   // intensidade da oscilação das lâmpadas causada por ela
   B.flickerStrength = function () {
     if (this.disabled) return 0;
-    return { dormant: 0, patrol: 0.5, investigate: 0.6, stalk: 0.12, retreat: 0.25, chase: 0.95, search: 0.65, ambush: 0, flinch: 1, breakLamp: 0.8, blackout: 0.9 }[this.state] || 0.3;
+    return { dormant: 0, patrol: 0.5, investigate: 0.6, stalk: 0.12, retreat: 0.25, chase: 0.95, search: 0.65, ambush: 0, flinch: 1, breakLamp: 0.8, blackout: 0.9, transform: 1 }[this.state] || 0.3;
   };
   B.glitch = function () {
-    return this.state === 'chase' ? 0.45 : this.state === 'flinch' ? 1 : 0.06;
+    return this.state === 'chase' ? 0.45 : this.state === 'flinch' ? 1 : this.state === 'transform' ? 0.55 : 0.06;
   };
 
   BR.Brain = Brain;
