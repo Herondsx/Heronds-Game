@@ -66,7 +66,7 @@ canvas { display: block; }
    --------------------------------------------------------- */
 #title-screen {
   position: fixed; inset: 0; z-index: 60;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: radial-gradient(ellipse at 50% 35%, #2a2210 0%, #0d0b05 45%, #000 85%);
   cursor: pointer; transition: opacity 0.7s ease; overflow: hidden;
 }
@@ -82,6 +82,23 @@ canvas { display: block; }
 }
 @keyframes grain { 0% { transform: translate(0,0); } 25% { transform: translate(-3%,2%); } 50% { transform: translate(2%,-3%); } 75% { transform: translate(-2%,-1%); } 100% { transform: translate(1%,3%); } }
 #title-screen.hide { opacity: 0; }
+/* volume na tela de título */
+#title-screen .vol-panel {
+  position: relative; z-index: 3; margin-top: clamp(16px, 5vh, 44px); max-width: 92vw;
+  display: flex; gap: 26px; flex-wrap: wrap; justify-content: center;
+  padding: 10px 18px; background: rgba(0,0,0,0.45); border: 1px solid rgba(180,160,90,0.25); border-radius: 4px;
+  font-size: 0.8rem; color: #b9a670; letter-spacing: 0.06em; cursor: default;
+}
+#title-screen .vol-panel label, #intro .vol-mini label { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+#title-screen .vol-panel input, #intro .vol-mini input { width: 120px; accent-color: #c9a64a; cursor: pointer; }
+#title-screen .vol-panel span, #intro .vol-mini span { min-width: 3.2em; color: #f0e2b0; }
+/* volume durante a intro */
+#intro .vol-mini {
+  position: absolute; right: 150px; bottom: 18px; z-index: 10;
+  padding: 4px 10px; background: rgba(0,0,0,0.4); border: 1px solid rgba(180,160,90,0.3); border-radius: 3px;
+  font-size: 12px; color: rgba(220,200,130,0.75); letter-spacing: 0.08em; opacity: 0.6; transition: opacity 0.2s;
+}
+#intro .vol-mini:hover { opacity: 1; }
 #title-screen .tube {
   position: absolute; top: 0; left: 50%; transform: translateX(-50%);
   width: min(60vw, 520px); height: 14px; border-radius: 0 0 6px 6px;
@@ -154,14 +171,15 @@ canvas { display: block; }
 
 #settings {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 45;
-  display: none; flex-direction: column; gap: 14px; width: min(460px, 92vw);
+  display: none; flex-direction: column; gap: 12px; width: min(460px, 92vw); max-height: 94vh; overflow-y: auto;
   background: rgba(8, 7, 2, 0.96); padding: 26px 30px; border: 1px solid #6e5a23; border-radius: 4px;
   box-shadow: 0 0 80px #000;
 }
 #settings.show { display: flex; }
 #settings h2 { text-align: center; letter-spacing: 0.2em; }
-#settings label { display: flex; flex-direction: column; gap: 6px; font-size: 0.85rem; color: #cdbb85; }
-#settings label span { float: right; color: #fff; }
+#settings label { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 4px 10px; font-size: 0.85rem; color: #cdbb85; }
+#settings label span { color: #fff; }
+#settings label input { grid-column: 1 / -1; }
 #settings input[type=range] { width: 100%; accent-color: #c9a64a; }
 #settings .calib { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 #settings .calib span { width: 34px; height: 34px; border: 1px solid #333; }

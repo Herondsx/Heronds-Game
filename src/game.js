@@ -803,18 +803,9 @@ window.BackroomsGame = (function () {
 
   // ---------------- configurações ----------------
   function setupSettings() {
-    const bind = (id, key, fmt, apply) => {
-      const el = $(id), lab = $(id + '-v');
-      el.value = BR.Settings[key];
-      const upd = () => { BR.Settings[key] = parseFloat(el.value); if (lab) lab.textContent = fmt(BR.Settings[key]); if (apply) apply(); BR.saveSettings(); };
-      el.addEventListener('input', upd);
-      if (lab) lab.textContent = fmt(BR.Settings[key]);
-    };
-    bind('set-sens', 'sens', (v) => v.toFixed(2) + 'x');
-    bind('set-vol', 'volume', (v) => Math.round(v * 100) + '%', () => A.setVolume(BR.Settings.volume));
-    bind('set-bright', 'brightness', (v) => Math.round(v * 100) + '%');
-    bind('set-fx', 'fx', (v) => Math.round(v * 100) + '%');
-    bind('set-quality', 'quality', (v) => Math.round(v * 100) + '%', applyQuality);
+    // os controles usam data-setting (ver core.js); aqui só reagimos às mudanças
+    BR.bindSettingsUI();
+    BR.onSetting((key) => { if (key === 'quality') applyQuality(); });
   }
   function openSettings() { ui.settings.classList.add('show'); }
   function closeSettings() { ui.settings.classList.remove('show'); }

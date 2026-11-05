@@ -37,8 +37,10 @@
     A.comp.attack.value = 0.004; A.comp.release.value = 0.3;
     A.master.connect(A.comp); A.comp.connect(ctx.destination);
 
-    // bus do jogo (pode ser silenciado em transições)
-    A.bus = ctx.createGain(); A.bus.connect(A.master);
+    // fade (transições) -> geral.  Efeitos e música têm volumes separados.
+    A.fade = ctx.createGain(); A.fade.connect(A.master);
+    A.bus = ctx.createGain(); A.bus.gain.value = BR.Settings.sfx; A.bus.connect(A.fade);
+    A.musicBus = ctx.createGain(); A.musicBus.gain.value = BR.Settings.music; A.musicBus.connect(A.fade);
 
     // reverb
     A.reverb = ctx.createConvolver();
@@ -66,7 +68,15 @@
   A.resume = function () { if (A.ctx && A.ctx.state === 'suspended') A.ctx.resume(); };
   A.suspend = function () { if (A.ctx && A.ctx.state === 'running') A.ctx.suspend(); };
   A.setVolume = function (v) { if (A.master) A.master.gain.setTargetAtTime(v, A.ctx.currentTime, 0.05); };
-  A.fadeBus = function (v, time) { if (A.bus) A.bus.gain.setTargetAtTime(v, A.ctx.currentTime, time || 0.3); };
+  A.applyVolumes = function () {
+    if (!A.ctx) return;
+    const t = A.ctx.currentTime, S = BR.Settings;
+    A.master.gain.setTargetAtTime(S.volume, t, 0.05);
+    A.bus.gain.setTargetAtTime(S.sfx, t, 0.05);
+    A.musicBus.gain.setTargetAtTime(S.music, t, 0.05);
+  };
+  BR.onSetting((key) => { if (key === 'volume' || key === 'music' || key === 'sfx') A.applyVolumes(); });
+  A.fadeBus = function (v, time) { if (A.fade) A.fade.gain.setTargetAtTime(v, A.ctx.currentTime, time || 0.3); };
   A.now = function () { return A.ctx ? A.ctx.currentTime : 0; };
 
   function makeIR(ctx, seconds, decay) {
@@ -121,7 +131,7 @@
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5;
     const inG = ctx.createGain();
     const send = ctx.createGain();
-    inG.connect(lp); lp.connect(p); p.connect(A.bus);
+    inG.connect(lp); lp.connect(p); p.connect(o.out || A.bus);
     lp.connect(send); send.connect(A.reverbIn);
     const ch = {
       input: inG, panner: p, lp, send, rev: o.rev != null ? o.rev : 0.35, ref: p.refDistance, x, y, z,
@@ -684,7 +694,7 @@
     const el = new Audio(url); el.loop = true; el.preload = 'auto';
     let src;
     try { src = ctx.createMediaElementSource(el); } catch (e) { return null; }
-    const ch = A.spatial(x, y, z, { ref: 1.4, roll: 1.05, rev: 0.55 });
+    const ch = A.spatial(x, y, z, { ref: 1.4, roll: 1.05, rev: 0.55, out: A.musicBus });
     const g = ctx.createGain(); g.gain.value = 0;
     chain(src, filt('highpass', 300, 0.7), filt('lowpass', 3300, 0.8), (function () {
       const pk = filt('peaking', 1100); pk.gain.value = 7; pk.Q.value = 1; return pk;
@@ -696,7 +706,7 @@
       setOn(v) {
         r.on = v;
         const t = ctx.currentTime;
-        if (v) { const p = el.play(); if (p && p.catch) p.catch(() => { /* ok */ }); g.gain.setTargetAtTime(0.85, t, 0.4); crack.gain.setTargetAtTime(0.02, t, 0.3); }
+        if (v) { const p = el.play(); if (p && p.catch) p.catch(() => { /* ok */ }); g.gain.setTargetAtTime(0.6, t, 0.4); crack.gain.setTargetAtTime(0.02, t, 0.3); }
         else { g.gain.setTargetAtTime(0, t, 0.05); crack.gain.setTargetAtTime(0, t, 0.05); setTimeout(() => { if (!r.on) el.pause(); }, 400); }
       },
       update(occ) { ch.setOcc(occ); },

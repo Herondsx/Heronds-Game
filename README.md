@@ -114,5 +114,7 @@ src/intro.js      abertura cinematográfica sincronizada com Assets/Audio-intro.
 - Tudo é gerado na hora: nenhuma imagem externa. As únicas mídias são as músicas e o áudio da
   intro em `Assets/`.
 
-Em **Ajustes** dá para mudar sensibilidade, volume, brilho, intensidade dos efeitos de tela e a
-resolução de renderização (útil em notebooks).
+Em **Ajustes** (Esc) dá para mudar sensibilidade, brilho, intensidade dos efeitos de tela, a
+resolução de renderização (útil em notebooks) e três volumes separados: **geral**, **música e intro**
+(músicas do rádio + áudio da abertura) e **efeitos e ambiente**. Os volumes também aparecem na tela de
+título e durante a intro, e a escolha fica salva no navegador.

@@ -74,7 +74,8 @@ window.BR = window.BR || {};
   // ----------------------------------------------------------
   //  Configurações (persistem no navegador; falham em silêncio)
   // ----------------------------------------------------------
-  const DEFAULTS = { sens: 1.0, volume: 0.85, brightness: 1.0, fx: 1.0, quality: 1.0, hud: 1 };
+  // volume = geral · music = músicas do rádio + áudio da intro · sfx = efeitos e ambiente
+  const DEFAULTS = { sens: 1.0, volume: 0.8, music: 0.45, sfx: 1.0, brightness: 1.0, fx: 1.0, quality: 1.0, hud: 1 };
   BR.Settings = Object.assign({}, DEFAULTS);
   BR.loadSettings = function () {
     try {
@@ -87,6 +88,43 @@ window.BR = window.BR || {};
     try { localStorage.setItem('br_settings_v2', JSON.stringify(BR.Settings)); } catch (e) { /* ok */ }
   };
   BR.loadSettings();
+
+  // ----------------------------------------------------------
+  //  Controles de ajuste ligados por atributo
+  //    <input type="range" data-setting="music">
+  //    <span data-setting-label="music"></span>
+  //  Todos os controles da mesma chave ficam sincronizados
+  //  (tela de título, intro e menu de ajustes).
+  // ----------------------------------------------------------
+  const pct = (v) => Math.round(v * 100) + '%';
+  const FMT = { sens: (v) => v.toFixed(2) + 'x', volume: pct, music: pct, sfx: pct, brightness: pct, fx: pct, quality: pct };
+  const listeners = [];
+  BR.onSetting = function (fn) { listeners.push(fn); };
+  function syncUI(key) {
+    const v = BR.Settings[key];
+    document.querySelectorAll('input[data-setting="' + key + '"]').forEach((el) => { if (parseFloat(el.value) !== v) el.value = v; });
+    document.querySelectorAll('[data-setting-label="' + key + '"]').forEach((el) => { el.textContent = (FMT[key] || String)(v); });
+  }
+  BR.setSetting = function (key, v) {
+    BR.Settings[key] = v;
+    BR.saveSettings();
+    syncUI(key);
+    for (const fn of listeners) { try { fn(key, v); } catch (e) { /* um ouvinte com erro não trava os outros */ } }
+  };
+  BR.bindSettingsUI = function () {
+    document.querySelectorAll('input[data-setting]').forEach((el) => {
+      if (el.dataset.bound) return;
+      el.dataset.bound = '1';
+      const key = el.dataset.setting;
+      el.value = BR.Settings[key];
+      el.addEventListener('input', () => BR.setSetting(key, parseFloat(el.value)));
+      // mexer no controle não pode "clicar" na tela que está atrás dele
+      for (const ev of ['click', 'pointerdown', 'mousedown']) el.addEventListener(ev, (e) => e.stopPropagation());
+    });
+    for (const key in FMT) syncUI(key);
+  };
+  // volume efetivo do <audio> da intro (geral x música)
+  BR.introVolume = function () { return Math.max(0, Math.min(1, BR.Settings.volume * BR.Settings.music)); };
 
   // ----------------------------------------------------------
   //  GLSL compartilhado

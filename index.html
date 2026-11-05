@@ -19,6 +19,9 @@
       <div class="tc" id="vhs-tc">SP 00:00:00</div>
       <div class="date">NOV. 05 1996</div>
     </div>
+    <div class="vol-mini">
+      <label>♪ <input type="range" data-setting="music" min="0" max="1" step="0.01" /> <span data-setting-label="music"></span></label>
+    </div>
     <button id="skip-intro">pular intro ⏭</button>
   </div>
 
@@ -30,6 +33,10 @@
       <div class="sub">— NÍVEL 0 · O SAGUÃO —</div>
       <p class="warn">⚠ Contém sustos, luzes piscando e sons altos.<br />Use fones de ouvido 🎧 — o som é 3D e te avisa de onde ele vem.</p>
       <div class="blink">▶ CLIQUE PARA COMEÇAR</div>
+    </div>
+    <div class="vol-panel" title="Ajuste antes de começar — dá para mudar depois em AJUSTES (Esc)">
+      <label>🔊 Volume geral <input type="range" data-setting="volume" min="0" max="1" step="0.01" /> <span data-setting-label="volume"></span></label>
+      <label>♪ Música e intro <input type="range" data-setting="music" min="0" max="1" step="0.01" /> <span data-setting-label="music"></span></label>
     </div>
   </div>
 
@@ -108,11 +115,13 @@
 
   <div id="settings">
     <h2>AJUSTES</h2>
-    <label>Sensibilidade do mouse <span id="set-sens-v"></span><input type="range" id="set-sens" min="0.3" max="2.5" step="0.05" /></label>
-    <label>Volume <span id="set-vol-v"></span><input type="range" id="set-vol" min="0" max="1" step="0.01" /></label>
-    <label>Brilho <span id="set-bright-v"></span><input type="range" id="set-bright" min="0.6" max="1.8" step="0.02" /></label>
-    <label>Efeitos de tela (VHS, grão, distorção) <span id="set-fx-v"></span><input type="range" id="set-fx" min="0" max="1" step="0.05" /></label>
-    <label>Resolução (desempenho) <span id="set-quality-v"></span><input type="range" id="set-quality" min="0.4" max="1" step="0.05" /></label>
+    <label>Sensibilidade do mouse <span data-setting-label="sens"></span><input type="range" data-setting="sens" min="0.3" max="2.5" step="0.05" /></label>
+    <label>Volume geral <span data-setting-label="volume"></span><input type="range" data-setting="volume" min="0" max="1" step="0.01" /></label>
+    <label>Música e intro <span data-setting-label="music"></span><input type="range" data-setting="music" min="0" max="1" step="0.01" /></label>
+    <label>Efeitos e ambiente <span data-setting-label="sfx"></span><input type="range" data-setting="sfx" min="0" max="1" step="0.01" /></label>
+    <label>Brilho <span data-setting-label="brightness"></span><input type="range" data-setting="brightness" min="0.6" max="1.8" step="0.02" /></label>
+    <label>Efeitos de tela (VHS, grão, distorção) <span data-setting-label="fx"></span><input type="range" data-setting="fx" min="0" max="1" step="0.05" /></label>
+    <label>Resolução (desempenho) <span data-setting-label="quality"></span><input type="range" data-setting="quality" min="0.4" max="1" step="0.05" /></label>
     <div class="calib"><span></span><span></span><span></span><p>Ajuste o brilho até o quadrado da esquerda ficar QUASE invisível.</p></div>
     <button class="menu-btn" id="btn-settings-back">VOLTAR</button>
   </div>
@@ -156,7 +165,19 @@
       var introEl = document.getElementById('intro');
       var introAudio = document.getElementById('intro-audio');
 
-      function beginIntro() {
+      // controles de volume funcionam desde a tela de título
+      window.BR.bindSettingsUI();
+      introAudio.volume = window.BR.introVolume();
+      window.BR.onSetting(function (key) {
+        if (key === 'volume' || key === 'music') introAudio.volume = window.BR.introVolume();
+      });
+
+      var started = false;
+      function beginIntro(e) {
+        // clicar nos controles de volume não começa o jogo
+        if (started || (e && e.target.closest && e.target.closest('.vol-panel'))) return;
+        started = true;
+        titleScreen.removeEventListener('click', beginIntro);
         // o clique é o gesto que libera o áudio do navegador
         window.BR.Audio.init();
         titleScreen.classList.add('hide');
@@ -173,7 +194,7 @@
         window.BackroomsGame.revealMenu();
       }
 
-      titleScreen.addEventListener('click', beginIntro, { once: true });
+      titleScreen.addEventListener('click', beginIntro);
     })();
   </script>
 </body>

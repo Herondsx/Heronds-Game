@@ -584,10 +584,11 @@ window.Intro = (function () {
 
     const skip = document.getElementById('skip-intro');
     if (skip) skip.addEventListener('click', finish);
-    window.addEventListener('keydown', (e) => { if (running && (e.code === 'Escape' || e.code === 'Space')) finish(); });
+    window.addEventListener('keydown', (e) => { if (running && (e.code === 'Escape' || e.code === 'Space') && !(e.target && e.target.matches && e.target.matches('input'))) finish(); });
 
     startPerf = performance.now(); lastT = 0;
     if (audio) {
+      audio.volume = BR.introVolume();
       audio.currentTime = 0;
       const pr = audio.play();
       if (pr && pr.then) pr.then(() => { audioOk = true; }).catch(() => { audioOk = false; });
