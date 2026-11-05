@@ -83,8 +83,12 @@ window.BackroomsGame = (function () {
   let entity, brain, flashModel, flashLens, beam, dust;
   let state = 'menu', loopStarted = false, prevT = 0, time = 0, debug = false;
   const keys = {};
-  const objects = [];
+  let objects = [];
   let noises = [];
+  // níveis "vivos": o atual e o próximo (já construído e escondido) + o vão entre eles
+  let cur = null, nextL = null, building = null, portal = null, pv = null, bath = null, flashKill = 0;
+  // item em destaque (como nos survival horror clássicos)
+  let itemShow = null, showScene = null, showCam = null, showModel = null, showFade = 0;
   let radio = null, hums = [], generatorSnd = null, exitHum = null;
   let distField = null, dfTimer = 0, trail = [], trailSet = new Set(), trailTimer = 0;
   let explored = null, mapOpen = false, mapTimer = 0, revealTimer = 0;
@@ -93,7 +97,7 @@ window.BackroomsGame = (function () {
   let playerSeesMonster = false, sawMonsterCool = 0, objectiveDone = 0, exitPowered = false, exitObj = null, generatorObj = null;
   let toastT = 0, readingNote = null, interactTarget = null, levelTitleT = 0;
   let bottles = [], bumpCool = 0, lastSafe = null;
-  let trans = null, transFX = 0, transFade = 0, cut = null, scriptFlicker = null, prologueStep = 0, screens = [];
+  let cut = null, scriptFlicker = null, prologueStep = 0, screens = [], dripSnd = null;
   const stats = { time: 0, deaths: 0, dist: 0, notes: 0, drinks: 0, throws: 0 };
 
   const P = {
@@ -320,6 +324,7 @@ window.BackroomsGame = (function () {
     const mark = (x, z) => used.push({ x, z });
     const sc = w.center(w.start);
     mark(sc.x, sc.z);
+    if (building && building.arrival) mark(building.arrival.x + building.arrival.nx * 0.6, building.arrival.z + building.arrival.nz * 0.6);
     const steps = w.stepsFromStart;
     const spotsByDist = w.wallSpots.filter((s) => steps[s.tile] > 4);
 
@@ -330,7 +335,7 @@ window.BackroomsGame = (function () {
     const es = U.pick(exitCands.length ? exitCands : spotsByDist);
     exitObj = { kind: 'exit', mesh: modelDoor(), reach: 2.4, mapIcon: 'exit', label: 'a porta de saída', open: 0 };
     placeOnWall(exitObj, es, 0, 0);
-    exitObj.y = 1.1;
+    exitObj.y = 1.1; exitObj.wallTile = w.idx(es.tx - es.nx, es.tz - es.nz);
     exitObj.use = useExit; exitObj.prompt = () => (exitPowered ? '[E] Atravessar a porta' : '[E] Porta trancada — sem energia');
     addObject(exitObj); mark(exitObj.x, exitObj.z);
 
@@ -362,8 +367,7 @@ window.BackroomsGame = (function () {
         o.prompt = () => (o.on ? 'Disjuntor ' + o.idx + ' — LIGADO' : '[E] Ligar disjuntor ' + o.idx);
         o.use = () => useBreaker(o);
         addObject(o); mark(o.x, o.z);
-        o.hum = A.electricHum(o.ix, 1.35, o.iz, 1);
-        if (o.hum) { o.hum.setLevel(0.05); hums.push(o.hum); }
+        deferSound(() => { o.hum = A.electricHum(o.ix, 1.35, o.iz, 1); if (o.hum) { o.hum.setLevel(o.on ? 0.18 : 0.05); hums.push(o.hum); } });
       });
     } else {
       // gerador no meio do mapa (célula com 3x3 livre)
@@ -403,8 +407,7 @@ window.BackroomsGame = (function () {
       o.prompt = () => (o.broken ? 'Rádio — destruído' : radio && radio.on ? '[E] Desligar rádio' : '[E] Ligar rádio (faz barulho)');
       o.use = () => toggleRadio(o);
       addObject(o); mark(o.x, o.z);
-      radio = A.radio(th.music, o.x, 0.2, o.z);
-      if (radio) radio.obj = o;
+      deferSound(() => { radio = A.radio(th.music, o.x, 0.2, o.z); if (radio) radio.obj = o; });
     }
 
     // ---- notas ----
@@ -492,7 +495,28 @@ window.BackroomsGame = (function () {
     g.add(mesh(box(0.07, 0.02, 0.1), PM.bezel, 0.32, 0.765, 0.14));
     if (Math.random() < 0.5) { const cup = mesh(cylG(0.04, 0.035, 0.1), PM.ceramic, -0.5, 0.81, 0.1); g.add(cup); }
     if (Math.random() < 0.6) g.add(mesh(box(0.22, 0.04, 0.3), PM.paper, 0.45, 0.78, -0.05));
-    g.userData.screen = scr;
+    // gaveteiro sob o tampo: três gavetas; a de cima desliza nos trilhos
+    const ped = new THREE.Group(); ped.position.set(0.42, 0, 0); g.add(ped);
+    ped.add(mesh(box(0.4, 0.68, 0.58), PM.deskDark, 0, 0.34, 0.03));
+    const drawer = new THREE.Group(); ped.add(drawer);
+    [[0.565, 0.13], [0.39, 0.17], [0.155, 0.25]].forEach(([y, h], i) => {
+      const par = i === 0 ? drawer : ped;
+      par.add(mesh(box(0.38, h, 0.02), PM.desk, 0, y, 0.33));
+      par.add(mesh(box(0.13, 0.014, 0.018), PM.chrome, 0, y + h * 0.2, 0.348));
+    });
+    drawer.add(mesh(box(0.35, 0.012, 0.5), PM.deskDark, 0, 0.508, 0.07));
+    for (const sx of [-0.172, 0.172]) drawer.add(mesh(box(0.012, 0.1, 0.5), PM.deskDark, sx, 0.555, 0.07));
+    drawer.add(mesh(box(0.35, 0.1, 0.012), PM.deskDark, 0, 0.555, -0.18));
+    g.userData.screen = scr; g.userData.drawer = drawer;
+    return g;
+  }
+  // lanterna deitada dentro da gaveta
+  function modelFlashlightProp() {
+    const g = new THREE.Group();
+    const body = mesh(cylG(0.017, 0.016, 0.17), PM.flash, 0, 0, 0); body.rotation.z = Math.PI / 2; g.add(body);
+    const head = mesh(cylG(0.03, 0.019, 0.06), PM.flash, 0.11, 0.005, 0); head.rotation.z = Math.PI / 2; g.add(head);
+    const lens = mesh(geo('lens', () => new THREE.CircleGeometry(0.026, 16)), PM.lens, 0.141, 0.005, 0); lens.rotation.y = Math.PI / 2; g.add(lens);
+    g.add(mesh(box(0.02, 0.008, 0.012), PM.dark, 0.03, 0.018, 0));
     return g;
   }
   function modelPlant() {
@@ -573,9 +597,11 @@ window.BackroomsGame = (function () {
           pc.prompt = () => (prologueStep === 0 ? '[E] Salvar o relatório e desligar o computador' : 'Seu computador');
           pc.use = () => { if (prologueStep === 0) prologueSavePC(d.userData.screen); };
           addObject(pc);
-          const dr = { kind: 'drawer', mesh: new THREE.Group(), x: cx + dx + 0.45, z: cz + side * 0.45 + 0.3, y: 0.55, reach: 1.9 };
-          dr.prompt = () => (prologueStep === 1 ? '[E] Abrir a gaveta (lanterna de emergência)' : prologueStep > 1 ? 'Gaveta vazia' : 'Gaveta');
-          dr.use = () => { if (prologueStep === 1) prologueTakeFlash(); };
+          const fl = modelFlashlightProp(); fl.position.set(-0.02, 0.536, 0.17); fl.rotation.y = 0.35;
+          d.userData.drawer.add(fl);
+          const dr = { kind: 'drawer', mesh: new THREE.Group(), x: cx + dx + 0.42, z: cz + side * 0.45 + 0.34, y: 0.6, reach: 1.9, drawer: d.userData.drawer, item: fl, open: 0 };
+          dr.prompt = () => (prologueStep === 1 ? (dr.opening ? '' : '[E] Abrir a gaveta') : prologueStep > 1 ? 'Gaveta vazia' : 'Gaveta (trancada até salvar o relatório)');
+          dr.use = () => { if (prologueStep === 1 && !dr.opening) openDrawer(dr); };
           addObject(dr);
         }
       }
@@ -612,11 +638,17 @@ window.BackroomsGame = (function () {
     for (const tx of [29, 30, 31]) {
       const sp = w.wallSpots.find((s) => s.tx === tx && s.tz === rr[1] && s.nz === 1);
       if (!sp) continue;
-      const o = { kind: tx === 30 ? 'sink' : 'deco', mesh: modelSink(), reach: 2.0 };
+      const o = { kind: tx === 30 ? 'sink' : 'deco', mesh: modelSink(), reach: 2.0, spot: sp };
       placeOnWall(o, sp, 0, 0.02);
       o.y = 0.95; o.ix = o.x + o.nx * 0.45; o.iz = o.z + o.nz * 0.45;
       addObject(addCols(o, [{ x: o.x + o.nx * 0.27, z: o.z + o.nz * 0.27, r: 0.32 }]));
-      if (tx === 30) { sinkMid = o; o.prompt = () => (prologueStep >= 2 ? '[E] Lavar o rosto' : 'Pia'); o.use = () => { if (prologueStep >= 2 && state === 'playing') startSinkScene(o); }; }
+      if (tx === 30) {
+        sinkMid = o;
+        o.prompt = () => (prologueStep === 2 ? '[E] Lavar o rosto' : 'Pia');
+        o.use = () => { if (prologueStep === 2 && state === 'playing') startSinkScene(o); };
+        // a torneira do meio pinga sem parar (gravação enviada para o projeto)
+        deferSound(() => { dripSnd = A.sampleLoop('drip', o.ix, 0.92, o.iz, 0.32); if (dripSnd) hums.push(dripSnd); });
+      }
     }
     for (const tz of [rr[1] + 2, rr[1] + 3.2, rr[1] + 4.4]) {
       const st = { kind: 'deco', mesh: modelStall(), x: (rr[2] + 1) * T - 0.08, z: tz * T };
@@ -644,40 +676,160 @@ window.BackroomsGame = (function () {
       toast('...a luz piscou. Melhor pegar a lanterna de emergência na gaveta.');
     }, 3500);
   }
+  // a gaveta desliza; quando termina de abrir, o item aparece em destaque
+  function openDrawer(dr) {
+    dr.opening = true; dr.open = 0; dr.shown = false;
+    A.drawer(dr.x, 0.6, dr.z);
+  }
   function prologueTakeFlash() {
     prologueStep = 2;
     P.hasFlash = true; P.flashOn = true;
-    A.pickup('battery'); A.flashClick();
+    A.flashClick();
     toast('Lanterna. [F] liga/desliga.');
     updateObjective();
     setTimeout(() => { if (theme.prologue) { const c = world.center(world.idx(28, 3)); A.phone(c.x, 1, c.z); } }, 6000);
   }
+  // ---- a pia: a torneira só pinga; você levanta o rosto para o espelho ----
   function startSinkScene(o) {
     state = 'cutscene';
-    cut = { t: 0, o, yaw0: P.yaw, pitch0: P.pitch, x0: P.x, z0: P.z, s: {} };
-    prologueStep = 3;
+    cut = { t: 0, o, s: {} };
+    prologueStep = 3; updateObjective();
     ui.prompt.style.display = 'none'; ui.crosshair.style.display = 'none';
   }
   function updateCutscene(dt) {
     const c = cut, o = c.o; c.t += dt; const t = c.t;
     const wantYaw = Math.atan2(o.nx, o.nz);
-    const k = 1 - Math.exp(-dt * 2.5);
+    const k = 1 - Math.exp(-dt * 2.6);
     P.yaw += U.angDiff(P.yaw, wantYaw) * k;
-    const pitchT = t < 2.2 ? -0.6 : U.lerp(-0.6, 0.02, U.smooth(2.2, 3.4, t));
+    const pitchT = t < 1.7 ? -0.62 : U.lerp(-0.62, 0.05, U.smooth(1.7, 2.7, t));
     P.pitch += (pitchT - P.pitch) * k;
     P.x += (o.x + o.nx * 0.62 - P.x) * k; P.z += (o.z + o.nz * 0.62 - P.z) * k;
-    P.y = 1.62 - (t < 2.2 ? 0.12 : 0.12 * (1 - U.smooth(2.2, 3.0, t)));
+    P.y = 1.62 - 0.12 * (1 - U.smooth(1.7, 2.5, t));
     camera.position.set(P.x, P.y, P.z);
     camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ');
-    if (t > 0.3 && !c.s.water) { c.s.water = 1; A.water(o.ix, 0.95, o.iz, 1.8); }
-    if (t > 2.4) {
-      const f = U.smooth(2.4, 4.2, t);
-      scriptFlicker = { x: o.x, z: o.z, s: f };
-      A.setHum(1.0 + f * 1.5, 1);
+    if (t > 0.3 && !c.s.tap) {
+      c.s.tap = 1; A.faucet(o.ix, 1.0, o.iz);
+      if (dripSnd) { dripSnd.setLevel(0.95); dripSnd.setRate(1.35); }
+      toast('A torneira só pinga.', 2.4);
     }
-    if (t > 2.9 && !c.s.g1) { c.s.g1 = 1; A.glitch(0.6); A.whisper(P.x - Math.sin(P.yaw) * -1, P.y, P.z - Math.cos(P.yaw) * -1); }
-    if (t > 3.9 && !c.s.pop) { c.s.pop = 1; A.lightPop(o.x, 2.6, o.z + 1); glitchPulse = 0.6; }
-    if (t > 4.4) { cut = null; startNoclip(levelIndex + 1, 'wall'); }
+    if (t > 2.3 && !c.s.mirror) { c.s.mirror = 1; startMirror(o); }
+    if (t > 2.9) {
+      cut = null;
+      ui.prompt.style.display = ''; ui.crosshair.style.display = '';
+      state = document.pointerLockElement === document.body || noLock ? 'playing' : 'paused';
+      if (state === 'paused') ui.pause.classList.add('show');
+    }
+  }
+  // o espelho mostra os Fundos; as luzes morrem; no escuro o espelho vira um vão do tamanho de uma porta
+  function startMirror(o) {
+    if (!nextL) nextL = prepareLevel(levelIndex + 1, 'hole');
+    const sp = o.spot;
+    const here = { x: sp.x, z: sp.z, nx: sp.nx, nz: sp.nz, tile: world.idx(sp.tx - sp.nx, sp.tz - sp.nz) };
+    openPortal(here, nextL, { w: 0.8, h: 0.9, y0: 1.15 }, { rough: 0.003, round: 0.008, light: 0.3, off: 0.048 });
+    for (const m of o.mesh.children) if (m.material === PM.mirror) m.visible = false; // o vidro deixa de refletir: vira janela
+    bath = { t: 0, o, s: {} };
+    o.use = null; // a pia já não é mais "a pia"
+    const hum = A.electricHum(o.ix, 1.6, o.iz, 1.4);
+    if (hum) { hum.setLevel(0.02); hums.push(hum); bath.hum = hum; }
+    glitchPulse = 0.3; A.glitch(0.35);
+  }
+  function updateBath(dt) {
+    const b = bath;
+    if (!b || !pv || pv.phase !== 'open') return;
+    b.t += dt; const t = b.t, o = b.o;
+    if (t < 3.0) { scriptFlicker = { x: o.x, z: o.z, s: U.smooth(0.4, 2.9, t) * 0.85 }; if (b.hum) b.hum.setLevel(0.02 + U.smooth(0, 3, t) * 0.12); }
+    if (t > 1.2 && !b.s.wh) { b.s.wh = 1; A.whisper(P.x + Math.sin(P.yaw) * 1.2, P.y, P.z + Math.cos(P.yaw) * 1.2); }
+    if (t > 3.0 && !b.s.dark) { // apagão: tudo, inclusive o que se vê no espelho (e a lanterna falha)
+      b.s.dark = 1;
+      A.lightPop(o.x, 2.6, o.z + o.nz * 1.2); glitchPulse = 0.5;
+      power = 0.012; pv.otherPower = 0; flashKill = 1.15; scriptFlicker = null;
+      if (dripSnd) dripSnd.setLevel(0.3);
+    }
+    if (t > 3.4 && !b.s.swap) { // no escuro absoluto, o espelho e a pia somem: o vão vira uma porta
+      b.s.swap = 1;
+      removeObject(o);
+      portal.setRect(1.2, 2.42, -0.06, 0.032);
+      portal.u.uRough.value = 0.045; portal.u.uRound.value = 0.06;
+      pv.walk = true; pv.light = 1.7;
+      if (dripSnd) { dripSnd.stop(); dripSnd = null; }
+    }
+    if (t > 4.0) { // a luz volta... só do outro lado
+      pv.otherPower = Math.min(1, pv.otherPower + dt * 1.6);
+      power = t < 5.4 ? 0.012 : 0.1 * (Math.random() < 0.9 ? 1 : 0.15);
+      if (b.hum) b.hum.setLevel(0.2);
+    }
+  }
+
+  // ==========================================================
+  //  ITEM EM DESTAQUE — como nos survival horror clássicos: o objeto
+  //  aparece grande no meio da tela, girando; o mouse gira; [E] pega.
+  // ==========================================================
+  const ITEMS = {
+    flashlight: {
+      name: 'LANTERNA DE EMERGÊNCIA',
+      desc: 'Alumínio preto, pilhas pela metade. Alguém escreveu "NÃO DESLIGUE" com caneta no cabo.',
+      model: () => modelFlashlightShow(),
+    },
+  };
+  function initShowcase() {
+    showScene = new THREE.Scene();
+    showCam = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 10);
+    showCam.position.set(0, 0, 0.6);
+    showScene.add(new THREE.HemisphereLight(0xfff0d8, 0x1a1208, 0.6));
+    const key = new THREE.DirectionalLight(0xffe0b0, 2.4); key.position.set(0.5, 0.9, 1.0); showScene.add(key);
+    const rim = new THREE.DirectionalLight(0x8fb0ff, 1.6); rim.position.set(-0.9, 0.3, -0.8); showScene.add(rim);
+    const low = new THREE.DirectionalLight(0xffb070, 0.5); low.position.set(0, -1, 0.4); showScene.add(low);
+    showModel = modelFlashlightShow(); showScene.add(showModel); // já compila os materiais
+  }
+  function modelFlashlightShow() {
+    const g = new THREE.Group();
+    const alu = new THREE.MeshStandardMaterial({ color: 0x1d1e21, roughness: 0.38, metalness: 0.75 });
+    const grip = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.9, metalness: 0.1 });
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xcfcfcf, roughness: 0.15, metalness: 1.0 });
+    const band = new THREE.MeshStandardMaterial({ color: 0xc89a1a, roughness: 0.5, metalness: 0.2 });
+    const lensM = new THREE.MeshStandardMaterial({ color: 0xfff6e0, roughness: 0.05, metalness: 0.0, emissive: 0xffe2a8, emissiveIntensity: 0.22 });
+    const cyl = (r0, r1, len, m, x, seg) => { const me = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, len, seg || 32), m); me.rotation.z = -Math.PI / 2; me.position.x = x; g.add(me); return me; };
+    cyl(0.0185, 0.0185, 0.14, alu, -0.02);                         // corpo
+    for (let i = 0; i < 9; i++) cyl(0.0198, 0.0198, 0.004, grip, -0.075 + i * 0.008, 24); // recartilhado
+    cyl(0.0192, 0.0192, 0.012, band, 0.03, 32);                     // faixa amarela
+    cyl(0.0185, 0.032, 0.05, alu, 0.075);                           // cabeça
+    cyl(0.0335, 0.0335, 0.012, chrome, 0.104);                      // aro
+    const lens = new THREE.Mesh(new THREE.CircleGeometry(0.029, 32), lensM); lens.rotation.y = Math.PI / 2; lens.position.x = 0.1105; g.add(lens);
+    cyl(0.0175, 0.0175, 0.014, grip, -0.097);                       // tampa traseira
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.009, 0.0022, 8, 20), chrome); ring.position.set(-0.11, 0, 0); ring.rotation.y = Math.PI / 2; g.add(ring);
+    const sw = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.006, 0.011), grip); sw.position.set(0.012, 0.0205, 0); g.add(sw);
+    return g;
+  }
+  function showItem(info, onTake) {
+    if (showModel) showScene.remove(showModel);
+    showModel = info.model(); showScene.add(showModel);
+    itemShow = { t: 0, onTake, rx: 0.42, ry: -0.75, drag: 0, out: 0 };
+    ui.itemName.textContent = info.name; ui.itemDesc.textContent = info.desc;
+    ui.item.classList.add('show');
+    showHUD(false);
+    ui.prompt.style.display = 'none'; levelTitleT = 0; ui.levelTitle.classList.remove('show');
+    state = 'item';
+    A.itemFound();
+  }
+  function takeItem() {
+    const s = itemShow;
+    if (!s || s.t < 0.35) return;
+    itemShow = null;
+    ui.item.classList.remove('show');
+    state = 'playing'; showHUD(true); ui.prompt.style.display = '';
+    s.onTake();
+  }
+  function renderShowcase(dt) {
+    const s = itemShow;
+    s.t += dt;
+    const k = U.smooth(0, 0.5, s.t);
+    s.drag = Math.max(0, s.drag - dt);
+    if (s.drag <= 0) s.ry += dt * 0.55;
+    showModel.rotation.set(s.rx + Math.sin(s.t * 0.9) * 0.05, s.ry, Math.sin(s.t * 0.7) * 0.06, 'XYZ');
+    showModel.position.set(0, Math.sin(s.t * 1.3) * 0.004 - (1 - k) * 0.03, 0);
+    showModel.scale.setScalar(0.55 + 0.45 * k);
+    renderer.setRenderTarget(null);
+    renderer.autoClear = false; renderer.clearDepth(); renderer.render(showScene, showCam); renderer.autoClear = true;
   }
 
   function spawnPickup(kind, x, z) {
@@ -757,15 +909,23 @@ window.BackroomsGame = (function () {
     exitHum = A.electricHum(exitObj.ix, 2.4, exitObj.iz, 2.4);
     if (exitHum) exitHum.setLevel(0.35);
     A.boom();
+    // o próximo lugar é montado agora (o estrondo e o tremor escondem a pausa) e fica atrás da porta
+    if (!nextL && levelIndex < LEVELS.length - 1) nextL = prepareLevel(levelIndex + 1, 'door');
     toast(theme.id === 0 ? 'A porta de manutenção destravou. Ela aparece no seu mapa [M].' : 'O elevador de carga tem energia. Corra.');
     updateObjective();
   }
   function useExit() {
     if (!exitPowered) { toast('Trancada. Sem energia.'); A.bump(exitObj.ix, 1, exitObj.iz); noise(exitObj.ix, exitObj.iz, 10, 'door'); return; }
-    if (state !== 'playing') return;
+    if (state !== 'playing' || exitObj.opening) return;
     exitObj.opening = true;
     A.creak(exitObj.ix, 1.2, exitObj.iz);
-    setTimeout(reachExit, 700);
+    if (levelIndex < LEVELS.length - 1) {
+      // do outro lado da porta já está o próximo lugar: é só entrar
+      if (!nextL) nextL = prepareLevel(levelIndex + 1, 'door');
+      const here = { x: exitObj.x, z: exitObj.z, nx: exitObj.nx, nz: exitObj.nz, tile: exitObj.wallTile };
+      openPortal(here, nextL, { w: 1.04, h: 2.16, y0: 0 }, { walk: true, rough: 0, round: 0, light: 1.1, kind: 'door' });
+      exitObj.use = null; exitObj.prompt = null;
+    } else setTimeout(reachExit, 700);
   }
   function toggleRadio(o) {
     if (!radio || o.broken) return;
@@ -828,31 +988,101 @@ window.BackroomsGame = (function () {
   // ==========================================================
   //  CONSTRUÇÃO DE NÍVEL
   // ==========================================================
-  function clearLevel() {
+  // sons criados durante a montagem em segundo plano só começam quando o nível vira o atual
+  function deferSound(fn) { if (building) building.onActivate.push(fn); else fn(); }
+
+  // luz assada, neblina e cor das lâmpadas do mundo (os shaders compartilham esses uniforms)
+  function applyEnv(w) {
+    const th = w.theme;
+    uni.uLightMap.value = w.lmTex; uni.uMapSize.value.set(w.N * w.T, w.N * w.T); uni.uCeil.value = w.CEIL;
+    uni.uLampColor.value.setRGB(th.lampColor[0], th.lampColor[1], th.lampColor[2]);
+    uni.uAmbient.value.setRGB(th.ambient[0], th.ambient[1], th.ambient[2]);
+    uni.uFogColor.value.setRGB(th.fog[0], th.fog[1], th.fog[2]);
+    uni.uFogDensity.value = th.fogDensity;
+  }
+  const fogClear = (th) => th._clear || (th._clear = new THREE.Color(th.fog[0], th.fog[1], th.fog[2]).convertLinearToSRGB());
+
+  function stopLevelSounds() {
     for (const h of hums) h.stop();
     hums = [];
     if (exitHum) { exitHum.stop(); exitHum = null; }
     if (radio) { radio.destroy(); radio = null; }
     if (generatorSnd) { generatorSnd.ch.dispose(); generatorSnd = null; }
-    objects.length = 0; bottles = [];
-    if (world) { scene.remove(world.group); world.dispose(); world = null; }
+  }
+  function disposeLevel(L) {
+    if (!L) return;
+    if (L.world.group.parent) L.world.group.parent.remove(L.world.group);
+    L.world.dispose();
   }
 
-  function buildLevel(i) {
-    clearLevel();
-    levelIndex = i; theme = LEVELS[i];
-    world = new BR.World(theme, renderer.capabilities.getMaxAnisotropy());
+  // onde um vão vindo do nível anterior se abre: uma parede junto do início, com espaço livre à frente
+  function arrivalSpot(w) {
+    const steps = w.stepsFromStart || w.bfsSteps(w.start);
+    const sx = w.start % w.N, sz = (w.start / w.N) | 0;
+    let best = null, bs = -1e9;
+    for (let strict = 1; strict >= 0 && !best; strict--) {
+      for (const sp of w.wallSpots) {
+        const st = steps[sp.tile];
+        if (!(st <= (strict ? 4 : 9))) continue;
+        let run = 0;
+        while (run < 7 && !w.isSolid(sp.tx + sp.nx * (run + 1), sp.tz + sp.nz * (run + 1))) run++;
+        if (run < 2) continue;
+        // o vão fica numa parede de verdade (com parede dos dois lados), não num pilar solto
+        const wx = sp.tx - sp.nx, wz = sp.tz - sp.nz;
+        const a = w.isSolid(wx + sp.nz, wz + sp.nx), b = w.isSolid(wx - sp.nz, wz - sp.nx);
+        if (strict ? !(a && b) : !(a || b)) continue;
+        const sc = run * 0.8 - st * 1.2 + (sp.tx === sx && sp.tz === sz ? 1.5 : 0) + Math.random() * 0.3;
+        if (sc > bs) { bs = sc; best = sp; }
+      }
+    }
+    if (!best) best = w.wallSpots[0];
+    return { x: best.x, z: best.z, nx: best.nx, nz: best.nz, tile: w.idx(best.tx - best.nx, best.tz - best.nz), spot: best };
+  }
+
+  // monta um nível sem mexer no atual (fica numa cena separada, invisível até alguém olhar pelo vão)
+  function prepareLevel(i, arrivalKind) {
+    const save = { world, theme, levelIndex, objects, exitObj, generatorObj, radio, hums };
+    const L = { index: i, theme: LEVELS[i], onActivate: [], scene: new THREE.Scene(), objects: [] };
+    building = L;
+    theme = L.theme; levelIndex = i; objects = L.objects; exitObj = null; generatorObj = null; radio = null; hums = [];
+    world = L.world = new BR.World(theme, renderer.capabilities.getMaxAnisotropy());
+    L.scene.add(world.group);
+    if (arrivalKind) L.arrival = arrivalSpot(world);
+    populate();
+    if (arrivalKind === 'door') { // do outro lado da porta de manutenção existe uma porta igual, aberta
+      const d = { kind: 'deco', mesh: modelDoor(), reach: 2.4 };
+      placeOnWall(d, L.arrival.spot, 0, 0);
+      d.y = 1.1; d.mesh.userData.hinge.rotation.y = -1.4; d.mesh.userData.sign.visible = false;
+      d.prompt = () => 'Porta de manutenção'; d.use = () => { toast('Não abre. Nem tem maçaneta deste lado.'); A.bump(d.ix, 1, d.iz); };
+      addObject(d);
+      L.arrivalDoor = d;
+    }
+    L.exitObj = exitObj; L.generatorObj = generatorObj;
+    building = null;
+    world = save.world; theme = save.theme; levelIndex = save.levelIndex; objects = save.objects;
+    exitObj = save.exitObj; generatorObj = save.generatorObj; radio = save.radio; hums = save.hums;
+    if (world) applyEnv(world);
+    return L;
+  }
+
+  // o nível pronto vira o atual. seamless = o jogador chegou andando por um vão (não reposiciona nada)
+  function activateLevel(L, seamless) {
+    stopLevelSounds();
+    if (world && cur && cur !== L) { scene.remove(world.group); cur.scene.add(world.group); }
+    cur = L;
+    levelIndex = L.index; theme = L.theme; world = L.world; objects = L.objects;
+    exitObj = L.exitObj; generatorObj = L.generatorObj;
+    bottles = []; noises = [];
+    if (world.group.parent) world.group.parent.remove(world.group);
     scene.add(world.group);
-    uni.uLampColor.value.setRGB(theme.lampColor[0], theme.lampColor[1], theme.lampColor[2]);
-    uni.uAmbient.value.setRGB(theme.ambient[0], theme.ambient[1], theme.ambient[2]);
-    uni.uFogColor.value.setRGB(theme.fog[0], theme.fog[1], theme.fog[2]);
-    uni.uFogDensity.value = theme.fogDensity;
-    renderer.setClearColor(new THREE.Color(theme.fog[0], theme.fog[1], theme.fog[2]).convertLinearToSRGB(), 1);
-    objectiveDone = 0; exitPowered = false; generatorObj = null; power = 1; blackoutT = 0;
+    applyEnv(world);
+    renderer.setClearColor(fogClear(theme), 1);
+    objectiveDone = 0; exitPowered = false; power = 1; blackoutT = 0;
     explored = new Uint8Array(world.N * world.N);
     P.inv.fuses = 0;
-    populate();
-    placePlayerAtStart();
+    const acts = L.onActivate; L.onActivate = [];
+    for (const f of acts) f();
+    if (seamless) lastSafe = { x: P.x, z: P.z }; else placePlayerAtStart();
     brain.reset(world, theme.monster);
     entity.root.visible = !theme.monster.disabled;
     scriptFlicker = null;
@@ -864,6 +1094,110 @@ window.BackroomsGame = (function () {
     if (A.ctx) { A.setAmbienceKind(theme.ambience); if (radio && state !== 'menu') radio.setOn(true); }
     if (!theme.prologue) P.hasFlash = true;
     showLevelTitle();
+  }
+
+  // (re)começa um nível do zero (início, reiniciar). Do prólogo, o Nível 0 já fica pronto atrás do espelho.
+  function buildLevel(i) {
+    closePortal();
+    stopLevelSounds();
+    if (nextL) { disposeLevel(nextL); nextL = null; }
+    if (cur) { disposeLevel(cur); cur = null; }
+    world = null; bath = null; cut = null;
+    const L = prepareLevel(i);
+    activateLevel(L, false);
+    if (theme.prologue) nextL = prepareLevel(i + 1, 'hole');
+  }
+
+  // ==========================================================
+  //  PASSAGEM SEM TRANSIÇÃO
+  //  O próximo lugar já existe (nextL). Um vão na parede mostra esse
+  //  mundo em 3D de verdade; atravessar o vão troca o mundo ativo no
+  //  mesmo quadro — sem fade, sem tela de carregamento.
+  // ==========================================================
+  // here = lado de cá { x, z, nx, nz, tile }; L = nível de destino (o lado de lá é L.arrival)
+  function openPortal(here, L, rect, opts) {
+    opts = opts || {};
+    pv = { here, L, oldL: null, phase: 'open', walk: !!opts.walk, closeT: 0, otherPower: 1, power: 1, light: opts.light || 0, kind: opts.kind || 'hole' };
+    portal.link(here, L.arrival);
+    portal.setRect(rect.w, rect.h, rect.y0, opts.off != null ? opts.off : 0.032);
+    portal.u.uOpen.value = 1;
+    portal.u.uRough.value = opts.rough != null ? opts.rough : 0.04;
+    portal.u.uRound.value = opts.round != null ? opts.round : 0.05;
+    portal.u.uSeed.value = Math.random() * 50;
+    scene.add(portal.mesh);
+  }
+  function closePortal() {
+    if (!pv) return;
+    if (portal.mesh.parent) portal.mesh.parent.remove(portal.mesh);
+    if (pv.oldL) disposeLevel(pv.oldL);
+    pv = null;
+  }
+  // o mundo do outro lado, visto pela câmera virtual (com a luz e a neblina de lá)
+  const _fp = new THREE.Vector3(), _fd = new THREE.Vector3(), _fl = new THREE.Vector4(), _mo = new THREE.Vector4(), _pt = new THREE.Vector4();
+  function renderPortal() {
+    const other = pv.phase === 'closing' ? pv.oldL : pv.L;
+    _fp.copy(uni.uFlashPos.value); _fd.copy(uni.uFlashDir.value); _fl.copy(uni.uFlick.value); _mo.copy(uni.uMonster.value); _pt.copy(uni.uPoint.value);
+    const br = uni.uBreath.value, gl = uni.uGlitch.value;
+    applyEnv(other.world);
+    portal.map(uni.uFlashPos.value, _fp); portal.mapDir(uni.uFlashDir.value, _fd); // a lanterna ilumina o outro lado
+    const pw = pv.phase === 'closing' ? pv.power : pv.otherPower;
+    uni.uFlick.value.set(pw, pw, pw, pw);
+    uni.uMonster.value.set(9999, 0, 9999, 0); uni.uPoint.value.set(0, -100, 0, 0); uni.uBreath.value = 0; uni.uGlitch.value = 0;
+    portal.u.uTime.value = time;
+    portal.render(other.scene, camera, fogClear(other.theme));
+    uni.uFlashPos.value.copy(_fp); uni.uFlashDir.value.copy(_fd); uni.uFlick.value.copy(_fl); uni.uMonster.value.copy(_mo); uni.uPoint.value.copy(_pt);
+    uni.uBreath.value = br; uni.uGlitch.value = gl;
+    applyEnv(world);
+  }
+  // colisão com a grade; dentro do vão aberto, a parede daquele trecho não segura o jogador
+  function collideWorld(p) {
+    if (pv && pv.walk) {
+      const f = portal.front(p.x, p.z), lat = portal.lateral(p.x, p.z);
+      if (f < 0.7 && f > -0.5 && Math.abs(lat) < portal.w / 2 - 0.18) {
+        const g = world.grid, t = pv.here.tile, old = g[t];
+        g[t] = 0; world.collide(p, 0.3); g[t] = old;
+        // depois de atravessar não dá para voltar: o vão atrás é só uma janela que se fecha
+        if (pv.phase === 'closing') { const d = -0.03 - portal.front(p.x, p.z); if (d > 0) { p.x += pv.here.nx * d; p.z += pv.here.nz * d; } }
+        return;
+      }
+    }
+    world.collide(p, 0.3);
+  }
+  // o jogador cruzou o plano do vão: troca de mundo no mesmo quadro (a imagem não muda)
+  function crossPortal() {
+    const L = pv.L, oldL = cur, oldHere = pv.here, oldPower = power;
+    portal.map(vT.set(P.x, P.y, P.z), vT); P.x = vT.x; P.z = vT.z;
+    portal.mapDir(vR.set(P.vx, 0, P.vz), vR); P.vx = vR.x; P.vz = vR.z;
+    portal.mapDir(P.flashDir, P.flashDir);
+    P.yaw += portal.th;
+    portal.map(camera.position, camera.position);
+    camera.rotation.y += portal.th;
+    camera.updateMatrixWorld();
+    nextL = null; bath = null;
+    activateLevel(L, true);
+    // o vão agora fica ATRÁS, deste lado, mostrando de onde você veio — e se fecha
+    pv.oldL = oldL; pv.phase = 'closing'; pv.closeT = 0; pv.power = oldPower; pv.light = 0;
+    portal.link(L.arrival, oldHere);
+    pv.here = L.arrival;
+    onArrive();
+  }
+  function updatePortal(dt) {
+    if (!pv) return;
+    portal.u.uTime.value = time;
+    if (pv.phase !== 'closing') return;
+    pv.closeT += dt;
+    const t = pv.closeT;
+    if (pv.kind === 'door' && cur.arrivalDoor) {
+      // a porta bate sozinha atrás de você
+      const d = cur.arrivalDoor, k = U.smooth(0.6, 0.95, t);
+      d.mesh.userData.hinge.rotation.y = -1.4 * (1 - k * k);
+      if (t > 0.95 && !pv.slam) { pv.slam = true; A.doorSlam(d.ix, 1.2, d.iz); shake(0.3); }
+      if (t > 1.05) closePortal();
+    } else {
+      // o rasgo na parede se fecha devagar (o papel de parede "cicatriza")
+      portal.u.uOpen.value = 1 - U.smooth(0.9, 3.4, t);
+      if (portal.u.uOpen.value <= 0.003 || t > 3.5) closePortal();
+    }
   }
 
   function placePlayerAtStart() {
@@ -897,12 +1231,15 @@ window.BackroomsGame = (function () {
       levelTitle: $('level-title'), ltName: $('lt-name'), ltSub: $('lt-sub'),
       caught: $('caught-screen'), caughtSub: $('caught-sub'), win: $('win-screen'), winStats: $('win-stats'),
       fade: $('fade'), flash: $('flash'),
+      item: $('item-show'), itemName: $('item-name'), itemDesc: $('item-desc'),
     };
 
     renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     renderer.domElement.id = 'webgl';
     document.body.appendChild(renderer.domElement);
     post = new BR.PostFX(renderer);
+    portal = new BR.Portal(renderer);
+    renderer.outputEncoding = THREE.sRGBEncoding; // só afeta os materiais padrão (vitrine do item); os shaders do jogo fazem a própria correção
     applyQuality();
 
     uni = BR.Shading.init();
@@ -928,8 +1265,11 @@ window.BackroomsGame = (function () {
     A.occluder = occlusion;
     setupControls();
     setupSettings();
+    initShowcase();
     buildLevel(0);
     renderer.compile(scene, camera);
+    if (nextL) renderer.compile(nextL.scene, camera);
+    renderer.compile(showScene, showCam);
   }
 
   function applyQuality() {
@@ -937,6 +1277,7 @@ window.BackroomsGame = (function () {
     renderer.setPixelRatio(1);
     renderer.setSize(innerWidth, innerHeight);
     post.setSize(innerWidth, innerHeight, pr);
+    if (portal) portal.setSize(post.rtScene.width, post.rtScene.height);
   }
 
   // ==========================================================
@@ -966,7 +1307,7 @@ window.BackroomsGame = (function () {
       if (locked) {
         noLock = false;
         if (state === 'menu' || state === 'paused') enterPlaying();
-      } else if (state === 'playing') {
+      } else if (state === 'playing' || state === 'item') {
         state = 'paused';
         ui.pause.classList.add('show');
         showHUD(false);
@@ -975,6 +1316,10 @@ window.BackroomsGame = (function () {
     });
 
     document.addEventListener('mousemove', (e) => {
+      if (state === 'item' && itemShow) { // gira o item com o mouse
+        itemShow.ry += e.movementX * 0.007; itemShow.rx = U.clamp(itemShow.rx + e.movementY * 0.007, -1.3, 1.3); itemShow.drag = 1.2;
+        return;
+      }
       if (state !== 'playing') return;
       if (document.pointerLockElement !== document.body && !(noLock && (e.buttons & 1))) return;
       const s = 0.0021 * BR.Settings.sens;
@@ -984,6 +1329,7 @@ window.BackroomsGame = (function () {
 
     document.addEventListener('keydown', (e) => {
       if (e.code === 'F3') { e.preventDefault(); debug = !debug; ui.debug.style.display = debug ? 'block' : 'none'; return; }
+      if (state === 'item') { if (e.code === 'KeyE' || e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); takeItem(); } return; }
       if (state !== 'playing') return;
       if (['Space', 'Tab', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
       if (keys[e.code]) return;
@@ -999,9 +1345,11 @@ window.BackroomsGame = (function () {
       }
     });
     document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+    document.addEventListener('mousedown', (e) => { if (state === 'item' && e.button === 0 && document.pointerLockElement === document.body) takeItem(); });
     addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
     addEventListener('resize', () => {
       camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      if (showCam) { showCam.aspect = innerWidth / innerHeight; showCam.updateProjectionMatrix(); }
       applyQuality();
     });
   }
@@ -1030,8 +1378,8 @@ window.BackroomsGame = (function () {
   function enterPlaying() {
     ui.startMenu.style.display = 'none';
     ui.pause.classList.remove('show'); closeSettings();
-    showHUD(true);
-    state = 'playing';
+    showHUD(!itemShow);
+    state = itemShow ? 'item' : 'playing';
     A.resume();
   }
 
@@ -1122,7 +1470,7 @@ window.BackroomsGame = (function () {
     P.vz += (iz * target - P.vz) * Math.min(1, acc * dt);
     const ox = P.x, oz = P.z;
     const p = { x: P.x + P.vx * dt, z: P.z + P.vz * dt };
-    world.collide(p, 0.3);
+    collideWorld(p);
     // colisão com objetos
     for (const o of objects) {
       if (o.cols) {
@@ -1136,7 +1484,7 @@ window.BackroomsGame = (function () {
       const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz), rr = o.r + 0.28;
       if (d < rr && d > 1e-4) { p.x = o.x + (dx / d) * rr; p.z = o.z + (dz / d) * rr; }
     }
-    world.collide(p, 0.3);
+    collideWorld(p);
     P.x = p.x; P.z = p.z;
     const moved = Math.hypot(P.x - ox, P.z - oz);
     P.speed = moved / Math.max(dt, 1e-4);
@@ -1170,6 +1518,9 @@ window.BackroomsGame = (function () {
 
     camera.position.set(P.x + rx * bobX, P.y, P.z + rz * bobX);
     camera.rotation.set(P.pitch + shakeAmt * U.rand(-0.03, 0.03), P.yaw + shakeAmt * U.rand(-0.03, 0.03), P.roll, 'YXZ');
+    // a câmera cruzou o plano do vão aberto? troca de mundo agora, sem transição
+    if (pv && pv.walk && pv.phase === 'open' && portal.front(camera.position.x, camera.position.z) < 0 &&
+        Math.abs(portal.lateral(camera.position.x, camera.position.z)) < portal.w / 2) crossPortal();
     P.fov = U.damp(P.fov, 72 + sp * (P.running ? 6 : 0) + P.fear * 3 - (P.holding ? 4 : 0), 5, dt);
     if (Math.abs(camera.fov - P.fov) > 0.01) { camera.fov = P.fov; camera.updateProjectionMatrix(); }
 
@@ -1251,6 +1602,7 @@ window.BackroomsGame = (function () {
       if (md < 9 && brain.state !== 'dormant' && Math.random() < (1 - md / 9) * 0.35) P.flashFlick = U.rand(0, 0.5);
     }
     target *= P.flashFlick;
+    if (flashKill > 0) { flashKill -= dt; target = 0; }
     P.flashI = U.damp(P.flashI, target, 25, dt);
     if (P.flashOn && P.battery <= 0 && !updateFlashlight.warned) { updateFlashlight.warned = true; toast('A lanterna apagou. [R] para trocar as pilhas.'); }
     if (P.battery > 0) updateFlashlight.warned = false;
@@ -1428,10 +1780,27 @@ window.BackroomsGame = (function () {
         if (bumpCool <= 0) { bumpCool = 0.6; A.bump(o.x, 0.3, o.z); }
       }
     }
+    // gaveta do prólogo deslizando; aberta, a lanterna aparece em destaque
+    for (const o of objects) {
+      if (o.kind !== 'drawer' || !o.opening) continue;
+      o.open = Math.min(1.4, o.open + dt * 2);
+      const e = 1 - Math.pow(1 - Math.min(1, o.open), 3);
+      o.drawer.position.z = e * 0.3;
+      if (o.open >= 1.4 && !o.shown && prologueStep === 1) {
+        o.shown = true;
+        showItem(ITEMS.flashlight, () => { o.item.visible = false; prologueTakeFlash(); });
+      }
+    }
     // porta abrindo / LEDs
     if (exitObj && exitObj.opening) { exitObj.open = Math.min(1, exitObj.open + dt * 1.6); exitObj.mesh.userData.hinge.rotation.y = -exitObj.open * 1.4; }
-    if (exitPowered) uni.uPoint.value.set(exitObj.x + exitObj.nx * 0.5, 2.4, exitObj.z + exitObj.nz * 0.5, 1.2 + Math.sin(time * 3) * 0.15);
-    else uni.uPoint.value.set(0, -100, 0, 0);
+    if (pv && pv.light > 0) {
+      const sd = pv.here, lc = pv.L.theme.lampColor;
+      uni.uPoint.value.set(sd.x + sd.nx * 0.8, 1.4, sd.z + sd.nz * 0.8, pv.light * portal.u.uOpen.value * pv.otherPower);
+      uni.uPointColor.value.setRGB(lc[0], lc[1] * 0.97, lc[2] * 0.9);
+    } else if (exitPowered && exitObj) {
+      uni.uPoint.value.set(exitObj.x + exitObj.nx * 0.5, 2.4, exitObj.z + exitObj.nz * 0.5, 1.2 + Math.sin(time * 3) * 0.15);
+      uni.uPointColor.value.setRGB(0.2, 1, 0.4);
+    } else uni.uPoint.value.set(0, -100, 0, 0);
   }
 
   // ==========================================================
@@ -1514,64 +1883,9 @@ window.BackroomsGame = (function () {
 
   function reachExit() {
     if (state !== 'playing') return;
-    if (levelIndex < LEVELS.length - 1) {
-      // fica de frente para o vão da porta e atravessa (a parede atrás dela "some")
-      P.x = exitObj.x + exitObj.nx * 0.7; P.z = exitObj.z + exitObj.nz * 0.7;
-      P.yaw = Math.atan2(exitObj.nx, exitObj.nz); P.pitch = 0;
-      startNoclip(levelIndex + 1, 'wall');
-    } else triggerWin();
+    triggerWin(); // só o último nível termina numa saída de verdade
   }
 
-  // ==========================================================
-  //  TRANSIÇÃO "NO-CLIP": nada de corte seco. O mundo distorce,
-  //  você atravessa a parede (ou afunda no chão), tudo escurece
-  //  e você acorda caído no chão do próximo lugar.
-  // ==========================================================
-  function startNoclip(next, mode) {
-    if (trans) return;
-    state = 'transition';
-    trans = { t: 0, next, mode: mode || 'wall', built: false, x0: P.x, z0: P.z, y0: P.y, yaw: P.yaw, pitch: P.pitch, fx: -Math.sin(P.yaw), fz: -Math.cos(P.yaw) };
-    closeNote(); mapOpen = false; ui.map.classList.remove('show');
-    showHUD(false);
-    toastT = 0; ui.toast.classList.remove('show'); levelTitleT = 0; ui.levelTitle.classList.remove('show');
-    A.noclip();
-    if (brain.voice) brain.voice.set(brain.pos.x, 2, brain.pos.z, 0, 1, 1);
-  }
-  function updateTransition(dt) {
-    const tr = trans; tr.t += dt; const t = tr.t;
-    const OUT = 3.4, BUILD = 3.75, IN0 = 4.2, WAKE = 8.4;
-    if (t < BUILD) {
-      const k = U.smooth(0, OUT, t), push = U.smooth(0.9, OUT, t);
-      let x = tr.x0, y = tr.y0, z = tr.z0;
-      if (tr.mode === 'wall') { x += tr.fx * push * 2.4; z += tr.fz * push * 2.4; y -= push * 0.2; }
-      else y = tr.y0 - push * (tr.y0 + 0.9);
-      camera.position.set(x, y, z);
-      camera.rotation.set(U.lerp(tr.pitch, tr.mode === 'wall' ? 0.02 : -0.25, k), tr.yaw + Math.sin(t * 1.7) * 0.035 * k, Math.sin(t * 0.9) * 0.09 * k, 'YXZ');
-      camera.fov = 72 + k * 36; camera.updateProjectionMatrix();
-      transFX = k; transFade = U.smooth(OUT - 0.6, BUILD, t);
-      A.setMuffle(k * 0.85);
-      power = Math.max(0.05, 1 - k * 0.55 + (Math.random() < k * 0.25 ? -0.6 : 0));
-    } else if (!tr.built) {
-      tr.built = true;
-      transFade = 1;
-      buildLevel(tr.next); // a pausa da construção fica escondida no escuro
-    } else {
-      // acorda caído e se levanta devagar
-      const w = U.smooth(IN0, WAKE, t), up = U.smooth(IN0 + 1.3, WAKE, t);
-      camera.position.set(P.x + Math.sin(t * 0.5) * 0.02, U.lerp(0.22, 1.62, up), P.z);
-      camera.rotation.set(U.lerp(-1.05, P.pitch, U.smooth(IN0 + 0.4, WAKE - 0.5, t)), P.yaw + (1 - w) * 0.35, U.lerp(1.25, 0, up), 'YXZ');
-      camera.fov = 72 + (1 - w) * 22; camera.updateProjectionMatrix();
-      transFX = 1 - w; transFade = 1 - U.smooth(IN0, IN0 + 1.6, t);
-      A.setMuffle((1 - w) * 0.85);
-      if (t >= WAKE) {
-        trans = null; transFX = 0; transFade = 0; A.setMuffle(0);
-        P.y = 1.62; P.fov = 72;
-        state = document.pointerLockElement === document.body || noLock ? 'playing' : 'paused';
-        if (state === 'paused') ui.pause.classList.add('show'); else showHUD(true);
-        onArrive();
-      }
-    }
-  }
   function onArrive() {
     if (theme.id === 0) {
       toast('...onde eu estou?', 3);
@@ -1747,7 +2061,7 @@ window.BackroomsGame = (function () {
     const now = performance.now();
     let dt = (now - prevT) / 1000; prevT = now;
     if (dt > 0.05) dt = 0.05;
-    if (state === 'playing' || state === 'caught' || state === 'transition' || state === 'cutscene') time += dt;
+    if (state === 'playing' || state === 'caught' || state === 'item' || state === 'cutscene') time += dt;
     uni.uTime.value = time;
 
     if (state === 'playing') {
@@ -1762,6 +2076,8 @@ window.BackroomsGame = (function () {
       updateFear(dt);
       ambientEvents(dt);
       updateObjects(dt);
+      updateBath(dt);
+      updatePortal(dt);
       revealTimer -= dt;
       if (revealTimer <= 0) { revealTimer = 0.25; revealMap(); if (mapOpen) drawMap(); }
       updateAudio();
@@ -1770,15 +2086,21 @@ window.BackroomsGame = (function () {
       updateCaught(dt);
       updateFlashlight(dt);
       updateLights(dt);
-    } else if (state === 'transition') {
-      updateTransition(dt);
+    } else if (state === 'item') {
+      // item em destaque: o mundo continua vivo atrás, escurecido
+      camera.position.set(P.x, P.y, P.z);
+      camera.rotation.set(P.pitch, P.yaw, P.roll, 'YXZ');
       updateFlashlight(dt);
       updateLights(dt);
+      updateObjects(dt);
       updateAudio();
+      if (toastT > 0) { toastT -= dt; if (toastT <= 0) ui.toast.classList.remove('show'); }
     } else if (state === 'cutscene') {
       updateCutscene(dt);
       updateFlashlight(dt);
       updateLights(dt);
+      updateObjects(dt);
+      updateBath(dt);
       updateAudio();
     } else if (state === 'menu' || state === 'paused') {
       // câmera respirando no menu
@@ -1798,14 +2120,15 @@ window.BackroomsGame = (function () {
     pu.uTime.value = time;
     pu.uGrain.value = (0.05 + P.fear * 0.045) * (0.3 + 0.7 * fx);
     pu.uVignette.value = 0.55 + P.fear * 0.3;
-    pu.uAberr.value = (0.5 + P.fear * 1.8 + transFX * 3.5) * fx;
-    pu.uWave.value = transFX * 1.4 * fx; // só nas transições entre lugares
+    pu.uAberr.value = (0.5 + P.fear * 1.8) * fx;
+    pu.uWave.value = 0;
     const near = brain && brain.state !== 'dormant' ? Math.max(0, 1 - brain.dist / 7) : 0;
     pu.uStatic.value = (near * 0.12 + glitchPulse * 0.25) * fx;
-    pu.uGlitch.value = Math.min(1, glitchPulse + near * 0.15 + transFX * 0.35 + transFade * 0.6) * fx;
-    pu.uDesat.value = P.fear * 0.12 + transFX * 0.6;
-    pu.uFade.value = transFade;
-    pu.uDouble.value = transFX * 0.8 * fx;
+    pu.uGlitch.value = Math.min(1, glitchPulse + near * 0.15) * fx;
+    pu.uDesat.value = P.fear * 0.12;
+    showFade = U.damp(showFade, itemShow ? 1 : 0, 9, dt);
+    pu.uFade.value = showFade * 0.66; // escurece atrás do item em destaque
+    pu.uDouble.value = 0;
     pu.uRed.value = redPulse;
     pu.uScan.value = 0.35 * fx;
     pu.uBright.value = BR.Settings.brightness;
@@ -1813,8 +2136,12 @@ window.BackroomsGame = (function () {
     pu.uBloom.value = 0.7;
     pu.uLens.value = 1;
     uni.uExposure.value = 1.0;
-    uni.uBreath.value = transFX * 3; // paredes "respiram" só ao atravessar para outro lugar
+    uni.uBreath.value = 0;
+    if (world) applyEnv(world);
+    camera.updateMatrixWorld();
+    if (pv && portal.visible(camera)) renderPortal(); // o outro lado, visto pelo vão
     post.render(scene, camera);
+    if (itemShow) renderShowcase(dt);
   }
 
   function updateAudio() {
@@ -1869,6 +2196,8 @@ window.BackroomsGame = (function () {
     get objects() { return objects; }, get camera() { return camera; },
     start() { A.init(); A.startAmbience(theme.ambience); if (!brain.voice) brain.voice = A.monsterVoice(); noLock = true; enterPlaying(); },
     level(i) { buildLevel(i); },
+    get portal() { return pv; }, get portalObj() { return portal; }, get nextLevel() { return nextL; },
+    get prologueStep() { return prologueStep; }, get item() { return itemShow; }, take() { takeItem(); },
     noise(x, z, r, kind, extra) { noise(x, z, r, kind, extra); },
     refreshField() { distField = world.distField(world.tileOf(P.x, P.z), 70); trailSet = new Set(trail); },
   };

@@ -307,3 +307,11 @@ canvas { display: block; }
   #start-menu .keys { font-size: 0.74rem; }
   #win-stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* ---------- item em destaque (estilo survival horror clássico) ---------- */
+#item-show { position: fixed; left: 0; right: 0; bottom: 8%; text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.45s; z-index: 30; }
+#item-show.show { opacity: 1; }
+#item-show .tag { font-size: 0.68rem; letter-spacing: 0.55em; color: #8f7a3a; margin-bottom: 8px; }
+#item-show .name { font-family: Georgia, 'Times New Roman', serif; font-size: 1.75rem; letter-spacing: 0.16em; color: #f0e3c2; text-shadow: 0 0 16px rgba(0, 0, 0, 0.95); }
+#item-show .desc { max-width: 560px; margin: 10px auto 0; padding: 0 16px; font-size: 0.86rem; line-height: 1.55; color: #bcae8f; text-shadow: 0 0 8px #000; }
+#item-show .hint { margin-top: 16px; font-size: 0.7rem; letter-spacing: 0.22em; color: #8a7a58; }

@@ -27,7 +27,7 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 - Todos os caminhos são **relativos** e respeitam maiúsculas/minúsculas (`Assets/` com A maiúsculo,
   `src/` minúsculo). Isso é obrigatório, porque o site fica em `/Heronds-Game/` e o servidor diferencia letras.
 - O Three.js r128 vem do CDN (cdnjs, HTTPS). O restante é gerado no próprio navegador.
-- Tamanho total ≈ 19 MB (o limite do Pages é 1 GB por site).
+- Tamanho total ≈ 37 MB, quase tudo áudio enviado (o limite do Pages é 1 GB por site).
 
 | Tecla | Ação |
 |---|---|
@@ -46,8 +46,11 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 | F3 | ver o estado e os "pensamentos" da entidade em tempo real |
 
 ### Objetivos
-- **Prólogo — o escritório (23:47):** salve o relatório, pegue a lanterna de emergência na gaveta e vá ao
-  banheiro lavar o rosto. Algo está errado com este prédio... e você atravessa a parede.
+- **Prólogo — o escritório (23:47):** salve o relatório, abra a gaveta do seu gaveteiro (ela desliza de
+  verdade e a lanterna aparece em destaque, girando, como nos survival horror clássicos — o mouse gira, [E]
+  pega) e vá ao banheiro lavar o rosto. A torneira só pinga. Quando você levanta o rosto, o espelho não
+  reflete mais o banheiro: mostra os Fundos. As luzes morrem, e no escuro o espelho vira um vão do tamanho
+  de uma porta. É só entrar.
 - **Nível 0 — O Saguão:** religue 3 disjuntores para destravar a porta de manutenção.
   Cada disjuntor faz um estalo alto, e a entidade passa a entender para onde você vai.
 - **Nível 1 — Zona Habitável:** encontre 3 fusíveis, leve-os ao gerador e corra até o elevador de carga.
@@ -129,7 +132,8 @@ src/core.js       utilitários, ruído procedural, configurações, GLSL comum
 src/textures.js   texturas procedurais (papel de parede, carpete, forro, concreto...)
 src/postfx.js     pós-processamento: bloom, aberração, grão, VHS, glitch, distorções
 src/audio.js      áudio 3D procedural (HRTF, reverb, oclusão, todos os efeitos)
-src/shading.js    shaders de iluminação (lightmap + lanterna + neblina)
+src/shading.js    shaders de iluminação (lightmap + lanterna + neblina) e pele da criatura
+src/portal.js     vãos entre mundos: câmera virtual, corte oblíquo, travessia sem transição
 src/world.js      geração de níveis, lightmap assado, geometria, colisão, A*, Dijkstra
 src/creature.js   a criatura: malha SDF com esqueleto, marchas, IK, física, teto, crescimento
 src/layouts.js    plantas fixas: escritório do prólogo e salão do fim da abertura
@@ -149,11 +153,15 @@ src/intro.js      abertura cinematográfica sincronizada com Assets/Audio-intro.
 - **Sons gravados** (`Assets/`, enviados para o projeto) são recortados em `Assets/sfx/`: passos no
   carpete andando e correndo (cada passo é disparado no instante da pisada; a corrida tem cadência 1,3×
   a da gravação), passos pesados da entidade (mais graves conforme ela cresce), **o grito da entidade**,
-  um único clique da lanterna, o som do jumpscare e um loop sem emenda do zumbido fluorescente. Os
-  efeitos que não têm gravação continuam sintetizados.
-- **Transições sem teletransporte:** ao atravessar a parede do banheiro ou a porta de saída, o mundo
-  distorce, as paredes respiram, o som abafa, você atravessa a parede e acorda caído no chão do próximo
-  lugar, levantando devagar.
+  um único clique da lanterna, o som do jumpscare, a **torneira pingando** do banheiro (em loop, posicional) e
+  um loop sem emenda do zumbido fluorescente. Os efeitos que não têm gravação (gaveta nos trilhos, registro
+  da torneira rangendo, o acorde do item encontrado...) continuam sintetizados.
+- **Passagens SEM transição (`src/portal.js`):** não existe tela de carregamento nem fade entre os lugares.
+  O próximo nível é montado antes e fica escondido; o espelho do banheiro e a porta de manutenção do Nível 0
+  mostram esse outro mundo em 3D de verdade (uma câmera virtual "do outro lado", com plano de corte oblíquo
+  no vão, então a perspectiva e a paralaxe são corretas — e até a sua lanterna ilumina o outro lado). Quando
+  você cruza o plano do vão, o jogo troca o mundo ativo no mesmo quadro e a imagem continua idêntica. Atrás
+  de você, o rasgo na parede cicatriza (ou a porta bate sozinha).
 - **Abertura:** a câmera desce reta como um elevador pelos andares (com a laje entre eles), sem
   legendas, até o Nível 0 real — onde as luzes se apagam fileira por fileira na sua direção.
 

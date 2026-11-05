@@ -82,16 +82,23 @@
     flash: { url: 'Assets/sfx/lanterna-clique.mp3' },
     jumpscare: { url: 'Assets/sfx/jumpscare.mp3' },
     scream: { url: 'Assets/sfx/grito.mp3' },
+    drip: { url: 'Assets/sfx/torneira-pingando.mp3' },
     amb: { url: 'Assets/sfx/ambiente-loop.mp3' },
   };
   A.buf = {};
   A._lastSlot = {};
+  A._pend = {};
   A.loadSamples = function () {
     for (const k in SAMPLES) {
       fetch(SAMPLES[k].url)
         .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
         .then((ab) => new Promise((res, rej) => A.ctx.decodeAudioData(ab, res, rej))) // forma com callback: Safari antigo
-        .then((b) => { A.buf[k] = b; if (k === 'amb' && A.amb) startAmbBed(); })
+        .then((b) => {
+          A.buf[k] = b;
+          if (k === 'amb' && A.amb) startAmbBed();
+          for (const h of A._pend[k] || []) h.start(); // laços que estavam esperando o arquivo
+          A._pend[k] = [];
+        })
         .catch(() => { /* sem o arquivo, cai no som sintetizado */ });
     }
   };
@@ -637,6 +644,76 @@
     const subg = A.ctx.createGain(); subg.gain.value = 0.5; amg.connect(subg.gain);
     chain(sub, filt('lowpass', 300), subg, env(t, 0.05, 0.9, 1.6), mix);
   }
+
+  // laço gravado e posicional (ex.: a torneira pingando). Começa assim que o arquivo carregar.
+  A.sampleLoop = function (key, x, y, z, level, o) {
+    if (!A.ctx) return null;
+    const ch = A.spatial(x, y, z, Object.assign({ ref: 1.1, roll: 1.5, rev: 0.45 }, o || {}));
+    const g = A.ctx.createGain(); g.gain.value = level; g.connect(ch.input);
+    const h = {
+      ch, src: null, rate: 1, stopped: false,
+      start() {
+        if (h.src || h.stopped || !A.buf[key]) return;
+        const src = A.ctx.createBufferSource(); src.buffer = A.buf[key]; src.loop = true; src.playbackRate.value = h.rate;
+        src.connect(g); src.start(A.now(), Math.random() * src.buffer.duration);
+        h.src = src;
+      },
+      setLevel(v) { g.gain.setTargetAtTime(v, A.ctx.currentTime, 0.25); },
+      setRate(r) { h.rate = r; if (h.src) h.src.playbackRate.setTargetAtTime(r, A.ctx.currentTime, 0.4); },
+      update(occ) { ch.setOcc(occ); },
+      stop() {
+        h.stopped = true;
+        g.gain.setTargetAtTime(0, A.ctx.currentTime, 0.08);
+        setTimeout(() => { try { if (h.src) h.src.stop(); } catch (e) { /* ok */ } ch.dispose(); }, 500);
+      },
+    };
+    if (A.buf[key]) h.start(); else (A._pend[key] = A._pend[key] || []).push(h);
+    return h;
+  };
+
+  // registro da torneira: rangido metálico, cano batendo e um gorgolejo seco (sem água)
+  A.faucet = function (x, y, z) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y, z], 1.6, { ref: 1, roll: 1.4, rev: 0.4 });
+    const sq = osc('sawtooth', 620, t, 0.42);
+    sq.frequency.setValueAtTime(620, t); sq.frequency.linearRampToValueAtTime(910, t + 0.18); sq.frequency.linearRampToValueAtTime(760, t + 0.4);
+    const trem = osc('square', 38, t, 0.42), tg = A.ctx.createGain(); tg.gain.value = 0.5; trem.connect(tg);
+    const sg = A.ctx.createGain(); sg.gain.value = 0.5; tg.connect(sg.gain);
+    chain(sq, filt('bandpass', 1500, 6), sg, env(t, 0.02, 0.07, 0.38), o);
+    const k = t + 0.5; // o cano bate dentro da parede
+    const th = osc('sine', 95, k, 0.25); th.frequency.exponentialRampToValueAtTime(48, k + 0.2);
+    chain(th, env(k, 0.003, 0.35, 0.22), o);
+    chain(noise(A.white, k, 0.05), filt('bandpass', 1800, 2), env(k, 0.001, 0.12, 0.05), o);
+    const gg = t + 0.75; // gorgolejo de ar no ralo
+    const lfo = osc('square', 13, gg, 0.7), lg = A.ctx.createGain(); lg.gain.value = 0.5; lfo.connect(lg);
+    const gv = A.ctx.createGain(); gv.gain.value = 0.5; lg.connect(gv.gain);
+    chain(noise(A.pink, gg, 0.7), filt('bandpass', 420, 3), gv, env(gg, 0.08, 0.16, 0.6), o);
+  };
+
+  // gaveta de metal deslizando nos trilhos e batendo no fim do curso
+  A.drawer = function (x, y, z) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y, z], 1.2, { ref: 1, roll: 1.3, rev: 0.3 });
+    const rol = osc('square', 31, t, 0.5), rg = A.ctx.createGain(); rg.gain.value = 0.5; rol.connect(rg);
+    const slide = A.ctx.createGain(); slide.gain.value = 0.5; rg.connect(slide.gain);
+    chain(noise(A.pink, t, 0.5), filt('bandpass', 900, 1.4), slide, env(t, 0.06, 0.32, 0.38), o);
+    chain(noise(A.white, t, 0.45), filt('highpass', 3500), env(t, 0.05, 0.03, 0.35), o);
+    const k = t + 0.46;
+    const th = osc('sine', 140, k, 0.2); th.frequency.exponentialRampToValueAtTime(70, k + 0.15);
+    chain(th, env(k, 0.002, 0.45, 0.16), o);
+    chain(noise(A.white, k, 0.04), filt('bandpass', 2600, 3), env(k, 0.001, 0.2, 0.04), o);
+    for (const d of [0.02, 0.07]) { const kk = k + d; chain(noise(A.white, kk, 0.02), filt('bandpass', 4200, 4), env(kk, 0.001, 0.08, 0.02), o); } // algo rola lá dentro
+  };
+
+  // item encontrado: um acorde grave e limpo (como nos survival horror clássicos)
+  A.itemFound = function () {
+    if (!A.ctx) return;
+    const t = A.now(), o = out(null, 3, { rev: 0.5 });
+    [[196, 0.18], [293.7, 0.12], [392, 0.08], [587.3, 0.035]].forEach(([f, v], i) => {
+      chain(osc('sine', f, t + i * 0.012, 2.6), env(t + i * 0.012, 0.01, v, 2.4), o);
+    });
+    chain(noise(A.pink, t, 0.6), filt('lowpass', 900), env(t, 0.25, 0.05, 0.35), o);
+  };
 
   A.growl = function (x, y, z, vol) {
     if (!A.ctx) return;

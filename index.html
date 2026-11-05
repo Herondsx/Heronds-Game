@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="description" content="THE BACKROOMS — caia para fora da realidade. Um jogo de terror em primeira pessoa no navegador." />
   <title>THE BACKROOMS — Nível 0</title>
-  <link rel="stylesheet" href="backrooms.css?v=20261105d" />
+  <link rel="stylesheet" href="backrooms.css?v=20261105e" />
 </head>
 <body>
   <!-- O canvas WebGL do jogo (Three.js) é criado por src/game.js e fica no fundo -->
@@ -90,6 +90,14 @@
 
   <div id="level-title"><h1 id="lt-name"></h1><div id="lt-sub"></div></div>
 
+  <!-- item em destaque: o objeto 3D gira no meio da tela (desenhado pelo WebGL) -->
+  <div id="item-show">
+    <div class="tag">— ITEM —</div>
+    <div class="name" id="item-name"></div>
+    <div class="desc" id="item-desc"></div>
+    <div class="hint">[E] pegar &nbsp;·&nbsp; mova o mouse para girar</div>
+  </div>
+
   <div id="note-overlay"><div class="paper"><p id="note-text"></p><small>[E] ou clique para fechar — o jogo NÃO pausa enquanto você lê</small></div></div>
 
   <div id="map-overlay">
@@ -144,17 +152,18 @@
 
   <!-- Three.js r128 via CDN (build global) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="src/core.js?v=20261105d"></script>
-  <script src="src/textures.js?v=20261105d"></script>
-  <script src="src/postfx.js?v=20261105d"></script>
-  <script src="src/audio.js?v=20261105d"></script>
-  <script src="src/shading.js?v=20261105d"></script>
-  <script src="src/world.js?v=20261105d"></script>
-  <script src="src/creature.js?v=20261105d"></script>
-  <script src="src/layouts.js?v=20261105d"></script>
-  <script src="src/ai.js?v=20261105d"></script>
-  <script src="src/game.js?v=20261105d"></script>
-  <script src="src/intro.js?v=20261105d"></script>
+  <script src="src/core.js?v=20261105e"></script>
+  <script src="src/textures.js?v=20261105e"></script>
+  <script src="src/postfx.js?v=20261105e"></script>
+  <script src="src/audio.js?v=20261105e"></script>
+  <script src="src/shading.js?v=20261105e"></script>
+  <script src="src/portal.js?v=20261105e"></script>
+  <script src="src/world.js?v=20261105e"></script>
+  <script src="src/creature.js?v=20261105e"></script>
+  <script src="src/layouts.js?v=20261105e"></script>
+  <script src="src/ai.js?v=20261105e"></script>
+  <script src="src/game.js?v=20261105e"></script>
+  <script src="src/intro.js?v=20261105e"></script>
   <script>
     /* ============ ORQUESTRAÇÃO DO FLUXO ============
        título -> intro (áudio) -> menu do jogo -> jogo */
