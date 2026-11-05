@@ -72,7 +72,7 @@
     '    vec2 off = vec2(sin(uTime * 0.9), cos(uTime * 0.7)) * 0.012 * uDouble;',
     '    col = mix(col, sampleScene(uv + off, dir), 0.45 * uDouble);',
     '  }',
-    '  col += texture2D(tBloom, uv).rgb * uBloom;',
+    '  col += texture2D(tBloom, uv).rgb * uBloom * vec3(1.0, 0.93, 0.82);',
     '  col = pow(max(col, vec3(0.0)), vec3(1.0 / uBright));',
     '  float l = dot(col, vec3(0.299, 0.587, 0.114));',
     '  col = mix(col, vec3(l), uDesat);',

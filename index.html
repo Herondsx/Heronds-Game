@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="description" content="THE BACKROOMS — caia para fora da realidade. Um jogo de terror em primeira pessoa no navegador." />
   <title>THE BACKROOMS — Nível 0</title>
-  <link rel="stylesheet" href="backrooms.css" />
+  <link rel="stylesheet" href="backrooms.css?v=20261105b" />
 </head>
 <body>
   <!-- O canvas WebGL do jogo (Three.js) é criado por src/game.js e fica no fundo -->
@@ -13,7 +13,6 @@
   <!-- ============ INTRO CINEMATOGRÁFICA ============ -->
   <div id="intro">
     <canvas id="intro-canvas"></canvas>
-    <div id="lore-text"></div>
     <div id="vhs-osd">
       <div class="play">▶ PLAY</div>
       <div class="tc" id="vhs-tc">SP 00:00:00</div>
@@ -42,8 +41,8 @@
 
   <!-- ============ MENU DE ENTRADA (após a intro) ============ -->
   <div id="start-menu">
-    <h1>VOCÊ NO-CLIPOU</h1>
-    <div class="sub">— PARA FORA DA REALIDADE —</div>
+    <h1>HORA EXTRA</h1>
+    <div class="sub">— SEXTA-FEIRA, 23:47 · 14º ANDAR —</div>
     <div class="keys">
       <b>MOUSE</b><span>olhar</span>
       <b>W A S D</b><span>mover</span>
@@ -59,9 +58,9 @@
       <b>F3</b><span>ver o "pensamento" da entidade</span>
     </div>
     <p class="brief">
-      Religue a energia e encontre a <b class="green">SAÍDA</b>.<br />
-      <b class="red">Algo</b> caminha por estes corredores. Ele <u>ouve</u> seus passos,
-      <u>enxerga</u> na luz, <u>aprende</u> com seus truques e prepara emboscadas.
+      Só falta salvar o relatório e ir pra casa.<br />
+      Mas este prédio tem lugares que <b class="red">não deveriam existir</b>.
+      E <u>algo</u> lá embaixo <u>ouve</u>, <u>aprende</u>... e <u>cresce</u>.
     </p>
     <div class="hint">As lâmpadas piscam quando ele está perto. Quase sempre.</div>
     <button class="menu-btn small" id="btn-start-settings">⚙ AJUSTES</button>
@@ -82,8 +81,10 @@
         <div class="label">AR</div>
         <div class="bar breath"><i id="bar-breath"></i></div>
       </div>
-      <div class="label">SANIDADE</div>
-      <div class="bar sanity"><i id="bar-sanity"></i></div>
+      <div id="wrap-sanity">
+        <div class="label">SANIDADE</div>
+        <div class="bar sanity"><i id="bar-sanity"></i></div>
+      </div>
     </div>
     <div class="right">
       <div class="battery"><div class="cell"><i id="battery-fill"></i></div><span id="battery-pct">100%</span></div>
@@ -147,16 +148,18 @@
 
   <!-- Three.js r128 via CDN (build global) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="src/core.js"></script>
-  <script src="src/textures.js"></script>
-  <script src="src/postfx.js"></script>
-  <script src="src/audio.js"></script>
-  <script src="src/shading.js"></script>
-  <script src="src/world.js"></script>
-  <script src="src/entity.js"></script>
-  <script src="src/ai.js"></script>
-  <script src="src/game.js"></script>
-  <script src="src/intro.js"></script>
+  <script src="src/core.js?v=20261105b"></script>
+  <script src="src/textures.js?v=20261105b"></script>
+  <script src="src/postfx.js?v=20261105b"></script>
+  <script src="src/audio.js?v=20261105b"></script>
+  <script src="src/shading.js?v=20261105b"></script>
+  <script src="src/world.js?v=20261105b"></script>
+  <script src="src/entity.js?v=20261105b"></script>
+  <script src="src/creature.js?v=20261105b"></script>
+  <script src="src/layouts.js?v=20261105b"></script>
+  <script src="src/ai.js?v=20261105b"></script>
+  <script src="src/game.js?v=20261105b"></script>
+  <script src="src/intro.js?v=20261105b"></script>
   <script>
     /* ============ ORQUESTRAÇÃO DO FLUXO ============
        título -> intro (áudio) -> menu do jogo -> jogo */

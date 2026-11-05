@@ -199,11 +199,14 @@
     this.CEIL = theme.ceil;
     this.N = theme.size;
     const N = this.N;
-    this.grid = generateLayout(N, theme.gen);
+    // layout fixo (escritório, abertura) ou gerado
+    const fixed = theme.layout ? theme.layout(N) : null;
+    this.grid = fixed ? fixed.grid : generateLayout(N, theme.gen);
+    this.zones = fixed ? fixed.zones : {};
     this.group = new THREE.Group();
     this.lamps = [];
     this.puddles = [];
-    this._pickStart();
+    if (fixed && fixed.start != null) this.start = fixed.start; else this._pickStart();
     this._connect();
     this._planLamps();
     this._bake();
@@ -285,6 +288,7 @@
       else if (r < L.dead + L.flick) lp.group = Math.random() < 0.5 ? 1 : 2;
       for (const zn of zones) if (Math.hypot(lp.x - zn.x, lp.z - zn.z) < zn.r) lp.group = Math.random() < 0.12 ? 1 + U.randInt(0, 1) : 3;
       if (Math.hypot(lp.x - sc.x, lp.z - sc.z) < 6) lp.group = 0;
+      if (this.theme.lampGroup) lp.group = this.theme.lampGroup(lp, lp.group, this);
     }
   };
 
@@ -431,15 +435,15 @@
     for (const k in tex) if (tex[k]) tex[k].anisotropy = aniso;
     this.textures = tex;
     const mats = (this.mats = {
-      wall: S.material({ map: tex.wall, breath: true, tint: th.wallTint || 0xffffff }),
-      floor: S.material({ map: tex.floor, worldUV: true, uvScale: [1 / 4.8, 1 / 4.8], spec: th.floorSpec || 0, shine: th.floorShine || 12 }),
-      ceil: S.material({ map: tex.ceil, worldUV: true, uvScale: [1 / 2.4, 1 / 2.4], dirt: 0.5 }),
+      wall: S.material({ map: tex.wall, breath: true, tint: th.wallTint || 0xffffff, dirt: th.wallDirt != null ? th.wallDirt : 1, bump: th.wallBump != null ? th.wallBump : 0.55 }),
+      floor: S.material({ map: tex.floor, worldUV: true, uvScale: [1 / 4.8, 1 / 4.8], spec: th.floorSpec || 0, shine: th.floorShine || 12, dirt: th.floorDirt != null ? th.floorDirt : 1, bump: th.floorBump != null ? th.floorBump : 0.9, wet: th.floorWet != null ? th.floorWet : 1 }),
+      ceil: S.material({ map: tex.ceil, worldUV: true, uvScale: [1 / 2.4, 1 / 2.4], dirt: th.ceilDirt != null ? th.ceilDirt : 0.5, tint: th.ceilTint || 0xffffff, bump: 0.5 }),
       trim: S.material({ tint: th.trimColor || 0x6b5a3a, dirt: 0.6, spec: 0.15, shine: 20 }),
       hole: S.material({ tint: 0x030303, dirt: 0 }),
       fixture: S.material({ tint: 0x3a3a36, spec: 0.4, shine: 30, dirt: 0.3 }),
       lamp: S.lampMaterial(tex.lamp),
     });
-    if (tex.crate) mats.crate = S.material({ map: tex.crate });
+    if (tex.crate) mats.crate = S.material({ map: tex.crate, bump: 0.6 });
     if (th.puddles) mats.puddle = S.material({ tint: 0x1a1c1c, spec: 2.4, shine: 140, dirt: 0.2 });
 
     // ---- paredes ----

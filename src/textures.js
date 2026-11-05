@@ -201,7 +201,7 @@
         x.stroke();
       }
       // placas com infiltração
-      if (Math.random() < 0.07) {
+      if (Math.random() < 0.045) {
         stain(x, ox + T / 2 + (Math.random() - 0.5) * 40, oy + T / 2 + (Math.random() - 0.5) * 40, 25 + Math.random() * 35,
           (a) => 'rgba(160,120,60,' + a + ')', true, 0.5);
       }
@@ -434,6 +434,97 @@
   Tex.white = function () {
     const c = canvas(4), x = c.getContext('2d');
     x.fillStyle = '#fff'; x.fillRect(0, 0, 4, 4);
+    return c;
+  };
+
+  // ----------------------------------------------------------
+  //  PRÓLOGO — escritório à noite
+  // ----------------------------------------------------------
+  Tex.officeWall = function () { // drywall pintado, textura de rolo
+    const S = 512, c = canvas(S);
+    const big = fbmField(S, 3, 4, 201), fine = fbmField(S, 64, 2, 202);
+    const x = paintBase(c, [214, 210, 198], [{ f: big, amt: 0.08 }, { f: fine, amt: 0.06 }], 0.03);
+    const gb = x.createLinearGradient(0, S - 40, 0, S);
+    gb.addColorStop(0, 'rgba(40,40,40,0)'); gb.addColorStop(1, 'rgba(40,40,40,0.12)');
+    x.fillStyle = gb; x.fillRect(0, S - 40, S, 40);
+    for (let i = 0; i < 6; i++) { x.fillStyle = 'rgba(60,60,60,0.05)'; x.fillRect(Math.random() * S, S - 30 - Math.random() * 60, 20 + Math.random() * 60, 3); }
+    return c;
+  };
+  Tex.officeCarpet = function () { // placas de carpete 50 cm, cinza-azulado com laço
+    const S = 512, c = canvas(S);
+    const big = fbmField(S, 4, 4, 211), mid = fbmField(S, 48, 2, 212);
+    const x = paintBase(c, [92, 98, 108], [{ f: big, amt: 0.12 }, { f: mid, amt: 0.1 }], 0.28);
+    const t = S / 4.8 * 0.5; // 50 cm
+    for (let i = 0; i <= S; i += t) {
+      x.fillStyle = 'rgba(0,0,0,0.12)'; x.fillRect(i, 0, 1.5, S); x.fillRect(0, i, S, 1.5);
+    }
+    for (let ty = 0; ty < S; ty += t) for (let tx = 0; tx < S; tx += t) { // direção alternada das placas
+      x.fillStyle = ((tx + ty) / t) % 2 ? 'rgba(255,255,255,0.025)' : 'rgba(0,0,0,0.025)'; x.fillRect(tx, ty, t, t);
+    }
+    for (let k = 0; k < 3; k++) stain(x, Math.random() * S, Math.random() * S, 25 + Math.random() * 30, (a) => 'rgba(60,55,45,' + a + ')', false, 0.4);
+    return c;
+  };
+  Tex.tiles = function () { // azulejo branco 15 cm (512 px = 1,2 m)
+    const S = 512, c = canvas(S), x = c.getContext('2d');
+    const n = 8, t = S / n;
+    x.fillStyle = '#9a9a94'; x.fillRect(0, 0, S, S);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const v = 228 + Math.random() * 14;
+      x.fillStyle = 'rgb(' + v + ',' + v + ',' + (v - 4) + ')';
+      x.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+      const g = x.createLinearGradient(i * t, j * t, i * t + t, j * t + t);
+      g.addColorStop(0, 'rgba(255,255,255,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0.06)');
+      x.fillStyle = g; x.fillRect(i * t + 2, j * t + 2, t - 4, t - 4);
+    }
+    for (let k = 0; k < 4; k++) stain(x, Math.random() * S, Math.random() * S, 30 + Math.random() * 40, (a) => 'rgba(150,130,90,' + a + ')', false, 0.25);
+    return c;
+  };
+  Tex.skyline = function () { // cidade à noite vista do 14º andar
+    const W = 2048, H = 512, c = canvas(W, H), x = c.getContext('2d');
+    const sky = x.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#05070d'); sky.addColorStop(0.55, '#141a2a'); sky.addColorStop(0.8, '#3a2c2a'); sky.addColorStop(1, '#1a1410');
+    x.fillStyle = sky; x.fillRect(0, 0, W, H);
+    for (let layer = 0; layer < 3; layer++) {
+      let px = -20;
+      while (px < W) {
+        const w = 40 + Math.random() * 120, h = (0.25 + Math.random() * (0.35 + layer * 0.15)) * H;
+        const y = H - h + layer * 30;
+        const base = 8 + layer * 10;
+        x.fillStyle = 'rgb(' + base + ',' + (base + 2) + ',' + (base + 8) + ')';
+        x.fillRect(px, y, w, H - y);
+        for (let wy = y + 8; wy < H - 10; wy += 9 + layer * 3) for (let wx = px + 5; wx < px + w - 5; wx += 7 + layer * 3) {
+          if (Math.random() < 0.22 - layer * 0.04) {
+            x.fillStyle = Math.random() < 0.8 ? 'rgba(255,214,140,' + (0.5 + Math.random() * 0.5) + ')' : 'rgba(180,210,255,0.8)';
+            x.fillRect(wx, wy, 3 + layer, 4 + layer);
+          }
+        }
+        if (Math.random() < 0.15) { x.fillStyle = '#ff2a1a'; x.fillRect(px + w / 2, y - 6, 3, 3); }
+        px += w + Math.random() * 20;
+      }
+    }
+    const glow = x.createLinearGradient(0, H * 0.6, 0, H);
+    glow.addColorStop(0, 'rgba(255,150,80,0)'); glow.addColorStop(1, 'rgba(255,150,80,0.18)');
+    x.fillStyle = glow; x.fillRect(0, 0, W, H);
+    return c;
+  };
+  Tex.screen = function (kind) { // tela de computador
+    const c = canvas(256, 160), x = c.getContext('2d');
+    if (kind === 'yellow') { // a foto que aparece em todas as telas...
+      const g = x.createLinearGradient(0, 0, 0, 160);
+      g.addColorStop(0, '#d8c47c'); g.addColorStop(1, '#8a7a3c');
+      x.fillStyle = g; x.fillRect(0, 0, 256, 160);
+      x.fillStyle = 'rgba(255,250,220,0.9)'; for (let i = 0; i < 4; i++) x.fillRect(40 + i * 50, 8 + i * 2, 30 - i * 4, 6);
+      x.fillStyle = 'rgba(60,50,20,0.6)'; x.fillRect(108, 60, 40, 70); // corredor ao fundo
+      x.fillStyle = 'rgba(20,15,5,0.9)'; x.fillRect(122, 80, 8, 32); // ...alguém parado
+      x.fillStyle = 'rgba(0,0,0,0.25)'; for (let y = 0; y < 160; y += 3) x.fillRect(0, y, 256, 1);
+      return c;
+    }
+    x.fillStyle = kind === 'off' ? '#05070a' : '#e9eef4'; x.fillRect(0, 0, 256, 160);
+    if (kind === 'off') return c;
+    x.fillStyle = '#2f5d9a'; x.fillRect(0, 0, 256, 14);
+    x.fillStyle = '#c7d2df'; for (let i = 0; i < 256; i += 32) x.fillRect(i, 14, 1, 146);
+    for (let y = 18; y < 160; y += 9) { x.fillRect(0, y, 256, 1); x.fillStyle = 'rgba(40,40,60,0.55)'; x.fillRect(4, y + 2, 10 + Math.random() * 18, 4); x.fillRect(36 + Math.random() * 10, y + 2, 14 + Math.random() * 12, 4); x.fillStyle = '#c7d2df'; }
+    x.fillStyle = '#1f7a3a'; x.fillRect(150, 40, 80, 50);
     return c;
   };
 

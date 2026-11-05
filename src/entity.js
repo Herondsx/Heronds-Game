@@ -257,7 +257,7 @@
   Entity.gameMaterials = function (skinTex) {
     const S = BR.Shading;
     return {
-      body: S.material({ map: skinTex, monster: true, spec: 0.32, shine: 22, dirt: 0.2, tint: 0x8a8080 }),
+      body: S.material({ map: skinTex, monster: true, spec: 0.14, shine: 14, dirt: 0.2, tint: 0x5e5252 }),
       eye: S.material({ eye: true, tint: 0xfff0b8, emissive: 0.4, dirt: 0 }),
       teeth: S.material({ tint: 0xb8ad8c, spec: 0.6, shine: 40, dirt: 0.3 }),
       inner: S.material({ tint: 0x050202, dirt: 0 }),

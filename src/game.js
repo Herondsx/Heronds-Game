@@ -16,7 +16,20 @@ window.BackroomsGame = (function () {
   // ==========================================================
   //  NÍVEIS
   // ==========================================================
+  const inZone = (w, zone, x, z) => { const r = w.zones[zone]; if (!r) return false; const T = w.T; return x >= r[0] * T && x <= (r[2] + 1) * T && z >= r[1] * T && z <= (r[3] + 1) * T; };
   const LEVELS = [
+    {
+      // prólogo: um escritório comum, numa sexta-feira à noite
+      id: 'office', prologue: true, name: '23:47', sub: 'SEXTA-FEIRA · ESCRITÓRIO, 14º ANDAR', size: 34, ceil: 2.7,
+      layout: (N) => BR.Layouts.office(N),
+      lamps: { sx: 3, ox: 1, sz: 4, oz: 1, dead: 0, flick: 0, darkZones: 0, darkR: 0, radius: 6.5, height: 2.68, intensity: 2.6, gi: 0.3, hang: false },
+      textures: () => ({ wall: TT(Tex.officeWall()), floor: TT(Tex.officeCarpet()), ceil: TT(Tex.ceiling()), lamp: TT(Tex.lampDiffuser(), { clamp: true }) }),
+      trim: true, trimColor: 0x3a3b3e, ceilingHoles: 0, floorSpec: 0.02, floorShine: 8, wallDirt: 0.3, floorDirt: 0.35, ceilDirt: 0.15, ceilTint: 0xf2f4f8, floorWet: 0, wallBump: 0.25,
+      lampColor: [0.9, 0.95, 1.0], ambient: [0.006, 0.007, 0.009], fog: [0.006, 0.007, 0.01], fogDensity: 0.03, wallTint: 0xc8c6c0,
+      surface: 'carpet', ambience: 'quiet',
+      monster: { disabled: true, walk: 1, run: 1, wake: 1e9, aggression: 0, stalkClose: 1, director: 1e9, lampBudget: 0, stage: 0 },
+      objective: 'prologue', count: 0, music: null, items: { battery: 0, almond: 0, props: 0 }, notes: [],
+    },
     {
       id: 0, name: 'NÍVEL 0', sub: 'O SAGUÃO', size: 46, ceil: 2.8,
       gen: { minRoom: 2, stopArea: 110, stopChance: 0.3, extraOpen: 0.45, doorChance: 0.45, maxGap: 4, pillarChance: 0.35, pillarSpacing: [3, 4], stubChance: 0.5, crateChance: 0, loopFrac: 0.012 },
@@ -25,7 +38,7 @@ window.BackroomsGame = (function () {
       trim: true, trimColor: 0x86704a, ceilingHoles: 0.004, floorSpec: 0.06, floorShine: 10,
       lampColor: [1.0, 0.9, 0.66], ambient: [0.010, 0.0085, 0.005], fog: [0.03, 0.025, 0.012], fogDensity: 0.05,
       surface: 'carpet', ambience: 'office',
-      monster: { walk: 1.35, run: 4.5, wake: 24, aggression: 0.1, stalkClose: 5.5, director: 75, lampBudget: 8 },
+      monster: { walk: 1.35, run: 4.5, wake: 24, aggression: 0.1, stalkClose: 5.5, director: 75, lampBudget: 10, stage: 0 },
       objective: 'breakers', count: 3,
       music: 'Assets/musica-1.mp3',
       items: { battery: 4, almond: 4, props: 22 },
@@ -48,7 +61,7 @@ window.BackroomsGame = (function () {
       trim: false, ceilingHoles: 0, floorSpec: 0.35, floorShine: 36, puddles: 16, ducts: 7,
       lampColor: [0.78, 0.88, 1.0], ambient: [0.006, 0.007, 0.009], fog: [0.012, 0.014, 0.017], fogDensity: 0.055,
       surface: 'concrete', ambience: 'industrial',
-      monster: { walk: 1.5, run: 4.85, wake: 12, aggression: 0.3, stalkClose: 6, director: 60, lampBudget: 10 },
+      monster: { walk: 1.5, run: 4.85, wake: 12, aggression: 0.3, stalkClose: 6, director: 60, lampBudget: 12, stage: 1 },
       objective: 'fuses', count: 3,
       music: 'Assets/musica-2.mp3',
       items: { battery: 5, almond: 4, props: 16 },
@@ -80,13 +93,14 @@ window.BackroomsGame = (function () {
   let playerSeesMonster = false, sawMonsterCool = 0, objectiveDone = 0, exitPowered = false, exitObj = null, generatorObj = null;
   let toastT = 0, readingNote = null, interactTarget = null, levelTitleT = 0;
   let bottles = [], bumpCool = 0, lastSafe = null;
+  let trans = null, transFX = 0, transFade = 0, cut = null, scriptFlicker = null, prologueStep = 0, screens = [];
   const stats = { time: 0, deaths: 0, dist: 0, notes: 0, drinks: 0, throws: 0 };
 
   const P = {
     x: 0, z: 0, y: 1.62, vx: 0, vz: 0, speed: 0, yaw: 0, pitch: 0,
     crouch: false, crouchT: 0, running: false, stamina: 1, exhausted: false,
     breath: 1, holding: false, breathLock: 0, breathT: 0, inhale: true,
-    flashOn: true, battery: 1, flashI: 0, flashDir: new THREE.Vector3(0, 0, -1), flashFlick: 1,
+    flashOn: false, hasFlash: false, battery: 1, flashI: 0, flashDir: new THREE.Vector3(0, 0, -1), flashFlick: 1,
     sanity: 1, fear: 0, heartT: 0,
     inv: { battery: 1, almond: 0, empty: 1, fuses: 0 },
     busy: 0, busyKind: null, stepAcc: 0, bobPhase: 0, roll: 0, fov: 72,
@@ -134,6 +148,22 @@ window.BackroomsGame = (function () {
       fuse: S.material({ tint: 0xe8e2d0, spec: 0.7, shine: 40, dirt: 0 }),
       black: S.material({ tint: 0x000000, dirt: 0 }),
       flash: S.material({ tint: 0x1b1c1e, spec: 1.2, shine: 50, dirt: 0 }),
+      desk: S.material({ tint: 0xb9b2a4, spec: 0.25, shine: 30, dirt: 0.4 }),
+      deskDark: S.material({ tint: 0x2c2d31, spec: 0.3, shine: 30, dirt: 0.2 }),
+      partition: S.material({ tint: 0x5d6878, dirt: 0.6 }),
+      bezel: S.material({ tint: 0x111214, spec: 0.8, shine: 60, dirt: 0 }),
+      screenOn: S.material({ map: TT(Tex.screen('on'), { clamp: true }), emissive: 1.4, dirt: 0 }),
+      screenOff: S.material({ map: TT(Tex.screen('off'), { clamp: true }), spec: 1.2, shine: 90, dirt: 0 }),
+      screenYellow: S.material({ map: TT(Tex.screen('yellow'), { clamp: true }), emissive: 1.6, dirt: 0 }),
+      leaf: S.material({ tint: 0x2e4a26, spec: 0.3, shine: 20, dirt: 0.3, double: true }),
+      pot: S.material({ tint: 0x6a4a36, dirt: 0.5 }),
+      ceramic: S.material({ tint: 0xeae8e2, spec: 1.2, shine: 70, dirt: 0.2 }),
+      chrome: S.material({ tint: 0xb8bcc0, spec: 2.0, shine: 120, dirt: 0 }),
+      mirror: S.material({ tint: 0x10141a, spec: 3.5, shine: 220, dirt: 0 }),
+      waterBlue: S.material({ tint: 0x8fb6d8, spec: 1.5, shine: 80, dirt: 0 }),
+      sky: S.material({ map: TT(Tex.skyline(), { clamp: true }), emissive: 1.5, dirt: 0 }),
+      tileFloor: S.material({ map: TT(Tex.tiles()), worldUV: true, uvScale: [1 / 1.2, 1 / 1.2], spec: 0.8, shine: 80, dirt: 0.5 }),
+      tileWall: S.material({ map: TT(Tex.tiles()), uvScale: [1, 1.6], spec: 0.7, shine: 70, dirt: 0.4 }),
       lens: S.material({ tint: 0xfff2d0, emissive: 0, dirt: 0 }),
     };
   }
@@ -283,6 +313,7 @@ window.BackroomsGame = (function () {
   }
 
   function populate() {
+    if (theme.prologue) return populateOffice();
     const w = world, th = theme, T = w.T;
     const used = [];
     const farEnough = (x, z, d) => used.every((u) => Math.hypot(u.x - x, u.z - z) > d);
@@ -353,7 +384,11 @@ window.BackroomsGame = (function () {
         const c = w.center(f.tile);
         const o = { kind: 'fuse', mesh: modelFuse(), x: c.x + U.rand(-0.3, 0.3), z: c.z + U.rand(-0.3, 0.3), y: 0.05, reach: 2, mapIcon: 'fuse', label: 'de um fusível' };
         o.prompt = () => '[E] Pegar fusível';
-        o.use = () => { P.inv.fuses++; A.pickup('fuse'); removeObject(o); toast('Fusível (' + (P.inv.fuses + generatorObj.fuses) + '/' + th.count + ')'); updateObjective(); };
+        o.use = () => {
+          P.inv.fuses++; A.pickup('fuse'); removeObject(o);
+          toast('Fusível (' + (P.inv.fuses + generatorObj.fuses) + '/' + th.count + ')'); updateObjective();
+          if (P.inv.fuses + generatorObj.fuses >= 2 && brain.e.stage < 2) brain.pendingGrow = true;
+        };
         addObject(o); mark(o.x, o.z);
       });
     }
@@ -440,6 +475,211 @@ window.BackroomsGame = (function () {
     }
   }
 
+  // ==========================================================
+  //  PRÓLOGO — o escritório
+  // ==========================================================
+  function modelDesk(screenMat) {
+    const g = new THREE.Group();
+    g.add(mesh(box(1.4, 0.035, 0.72), PM.desk, 0, 0.74, 0));
+    for (const sx of [-0.68, 0.68]) g.add(mesh(box(0.03, 0.72, 0.7), PM.deskDark, sx, 0.37, 0));
+    g.add(mesh(box(1.3, 0.42, 0.02), PM.deskDark, 0, 0.5, -0.33));
+    const mon = new THREE.Group(); mon.position.set(0, 0.76, -0.12); g.add(mon);
+    mon.add(mesh(box(0.22, 0.02, 0.16), PM.bezel, 0, 0.01, 0));
+    mon.add(mesh(box(0.04, 0.26, 0.04), PM.bezel, 0, 0.14, -0.02));
+    mon.add(mesh(box(0.58, 0.36, 0.03), PM.bezel, 0, 0.42, 0));
+    const scr = mesh(geo('scr', () => new THREE.PlaneGeometry(0.54, 0.32)), screenMat, 0, 0.42, 0.017); mon.add(scr);
+    g.add(mesh(box(0.44, 0.02, 0.15), PM.bezel, 0, 0.765, 0.12));
+    g.add(mesh(box(0.07, 0.02, 0.1), PM.bezel, 0.32, 0.765, 0.14));
+    if (Math.random() < 0.5) { const cup = mesh(cylG(0.04, 0.035, 0.1), PM.ceramic, -0.5, 0.81, 0.1); g.add(cup); }
+    if (Math.random() < 0.6) g.add(mesh(box(0.22, 0.04, 0.3), PM.paper, 0.45, 0.78, -0.05));
+    g.userData.screen = scr;
+    return g;
+  }
+  function modelPlant() {
+    const g = new THREE.Group();
+    g.add(mesh(cylG(0.2, 0.16, 0.4), PM.pot, 0, 0.2, 0));
+    for (let k = 0; k < 9; k++) {
+      const l = mesh(geo('leaf', () => new THREE.PlaneGeometry(0.16, 0.7)), PM.leaf, 0, 0.7, 0);
+      l.rotation.set(U.rand(-0.6, 0.6), (k / 9) * Math.PI * 2, U.rand(-0.5, 0.5)); l.position.y = 0.55 + Math.random() * 0.3;
+      g.add(l);
+    }
+    return g;
+  }
+  function modelCooler() {
+    const g = new THREE.Group();
+    g.add(mesh(box(0.34, 1.0, 0.34), PM.ceramic, 0, 0.5, 0));
+    g.add(mesh(cylG(0.15, 0.15, 0.42, 14), PM.waterBlue, 0, 1.2, 0));
+    g.add(mesh(box(0.06, 0.04, 0.05), PM.deskDark, 0.08, 0.8, 0.18));
+    return g;
+  }
+  function modelWindow(i, n) {
+    const g = new THREE.Group();
+    const pg = new THREE.PlaneGeometry(1.14, 1.6);
+    const uv = pg.attributes.uv, u0 = i / n, u1 = (i + 1) / n;
+    uv.setXY(0, u0, 1); uv.setXY(1, u1, 1); uv.setXY(2, u0, 0); uv.setXY(3, u1, 0); uv.needsUpdate = true;
+    g.add(mesh(pg, PM.sky, 0, 1.55, 0.01));
+    g.add(mesh(box(1.2, 0.06, 0.08), PM.deskDark, 0, 2.38, 0.04));
+    g.add(mesh(box(1.2, 0.08, 0.14), PM.deskDark, 0, 0.72, 0.07));
+    g.add(mesh(box(0.05, 1.7, 0.07), PM.deskDark, 0.6, 1.55, 0.035));
+    return g;
+  }
+  function modelSink() {
+    const g = new THREE.Group();
+    g.add(mesh(box(0.9, 0.08, 0.55), PM.ceramic, 0, 0.84, 0.27));
+    g.add(mesh(box(0.86, 0.75, 0.04), PM.deskDark, 0, 0.42, 0.5));
+    g.add(mesh(cylG(0.2, 0.15, 0.06, 18), PM.bezel, 0, 0.87, 0.27));
+    g.add(mesh(box(0.04, 0.16, 0.04), PM.chrome, 0, 0.96, 0.06));
+    g.add(mesh(box(0.04, 0.03, 0.14), PM.chrome, 0, 1.04, 0.12));
+    g.add(mesh(box(0.84, 0.94, 0.02), PM.chrome, 0, 1.6, 0.012));
+    g.add(mesh(geo('mirror', () => new THREE.PlaneGeometry(0.8, 0.9)), PM.mirror, 0, 1.6, 0.024));
+    return g;
+  }
+  function modelStall() {
+    const g = new THREE.Group();
+    g.add(mesh(box(0.03, 1.8, 1.4), PM.partition, -0.45, 1.0, 0.7));
+    g.add(mesh(box(0.03, 1.8, 1.4), PM.partition, 0.45, 1.0, 0.7));
+    const door = mesh(box(0.86, 1.6, 0.03), PM.partition, 0, 0.95, 1.4); door.rotation.y = U.rand(0, 0.5); g.add(door);
+    g.add(mesh(box(0.38, 0.4, 0.5), PM.ceramic, 0, 0.2, 0.3));
+    return g;
+  }
+
+  function populateOffice() {
+    const w = world, T = w.T;
+    const sc = w.center(w.start);
+    const addCols = (o, cols) => { o.cols = cols; return o; };
+    // janelas com a cidade lá fora (parede norte)
+    const wins = w.wallSpots.filter((s) => s.nz === 1 && s.tz === 1 && s.tx >= 1 && s.tx <= 21).sort((a, b) => a.tx - b.tx);
+    wins.forEach((sp, i) => { const o = { kind: 'deco', mesh: modelWindow(i, wins.length) }; placeOnWall(o, sp, 0, 0); addObject(o); });
+    // ilhas de baias: 4 mesas por ilha com divisória no meio
+    const islands = [[5.4, 4.8], [13.8, 4.8], [21.6, 4.8], [5.4, 11.4], [13.8, 11.4], [21.6, 11.4], [5.4, 17.4], [13.8, 17.4], [21.6, 17.4]];
+    screens = [];
+    islands.forEach(([cx, cz], ii) => {
+      for (const side of [-1, 1]) for (const dx of [-0.75, 0.75]) {
+        const mine = ii === 6 && side === 1 && dx === -0.75; // a SUA mesa
+        const scrMat = mine || Math.random() < 0.55 ? PM.screenOn : PM.screenOff;
+        const d = modelDesk(scrMat);
+        const o = { kind: 'deco', mesh: d, x: cx + dx, z: cz + side * 0.45 };
+        o.mesh.rotation.y = side > 0 ? 0 : Math.PI;
+        addObject(o);
+        screens.push({ mesh: d.userData.screen, mine });
+        if (!mine && Math.random() < 0.7) {
+          const ch = modelChair(); ch.rotation.z = 0; ch.position.y = 0;
+          const c = { kind: 'prop', mesh: ch, x: cx + dx + U.rand(-0.15, 0.15), z: cz + side * 1.15, r: 0.32 };
+          ch.rotation.y = (side > 0 ? Math.PI : 0) + U.rand(-0.5, 0.5);
+          addObject(c);
+        }
+        if (mine) {
+          const pc = { kind: 'pc', mesh: new THREE.Group(), x: cx + dx, z: cz + side * 0.45 - 0.12, y: 1.15, reach: 2.2 };
+          pc.prompt = () => (prologueStep === 0 ? '[E] Salvar o relatório e desligar o computador' : 'Seu computador');
+          pc.use = () => { if (prologueStep === 0) prologueSavePC(d.userData.screen); };
+          addObject(pc);
+          const dr = { kind: 'drawer', mesh: new THREE.Group(), x: cx + dx + 0.45, z: cz + side * 0.45 + 0.3, y: 0.55, reach: 1.9 };
+          dr.prompt = () => (prologueStep === 1 ? '[E] Abrir a gaveta (lanterna de emergência)' : prologueStep > 1 ? 'Gaveta vazia' : 'Gaveta');
+          dr.use = () => { if (prologueStep === 1) prologueTakeFlash(); };
+          addObject(dr);
+        }
+      }
+      // divisória central + pontas
+      const part = { kind: 'deco', mesh: new THREE.Group(), x: cx, z: cz };
+      part.mesh.add(mesh(box(3.1, 1.25, 0.05), PM.partition, 0, 0.625, 0));
+      for (const ex of [-1.55, 1.55]) part.mesh.add(mesh(box(0.05, 1.25, 1.7), PM.partition, ex, 0.625, 0));
+      addObject(addCols(part, [{ x: cx - 1.05, z: cz, r: 0.85 }, { x: cx, z: cz, r: 0.85 }, { x: cx + 1.05, z: cz, r: 0.85 }]));
+    });
+    // plantas junto aos pilares, bebedouro, armários
+    for (const [px, pz] of [[8, 6], [14, 6], [8, 12], [14, 12]]) {
+      const c = w.center(w.idx(px, pz));
+      addObject({ kind: 'prop', mesh: modelPlant(), x: c.x + 0.95, z: c.z + 0.2, r: 0.28 });
+    }
+    const kd = w.center(w.idx(23, 8));
+    addObject({ kind: 'prop', mesh: modelCooler(), x: kd.x, z: kd.z - 0.9, r: 0.3 });
+    for (let k = 0; k < 4; k++) {
+      const cab = { kind: 'deco', mesh: new THREE.Group(), x: (2 + k * 0.55) * 1.0 + 0.3, z: 20.9 };
+      cab.mesh.add(mesh(box(0.5, 1.3, 0.6), PM.deskDark, 0, 0.65, 0));
+      addObject(addCols(cab, [{ x: cab.x, z: cab.z, r: 0.35 }]));
+    }
+    // banheiro: piso e paredes de azulejo, pias com espelho, cabines
+    const rr = w.zones.restroom;
+    const fl = new THREE.Mesh(new THREE.PlaneGeometry((rr[2] - rr[0] + 1) * T, (rr[3] - rr[1] + 1) * T), PM.tileFloor);
+    fl.rotation.x = -Math.PI / 2; fl.position.set(((rr[0] + rr[2] + 1) / 2) * T, 0.004, ((rr[1] + rr[3] + 1) / 2) * T);
+    addObject({ kind: 'deco', mesh: new THREE.Group(), x: 0, z: 0 }).mesh.add(fl);
+    for (const sp of w.wallSpots) {
+      if (sp.tx < rr[0] || sp.tx > rr[2] || sp.tz < rr[1] || sp.tz > rr[3]) continue;
+      const o = { kind: 'deco', mesh: new THREE.Group() };
+      o.mesh.add(mesh(geo('tilewall', () => new THREE.PlaneGeometry(1.2, 2.0)), PM.tileWall, 0, 1.0, 0.012));
+      placeOnWall(o, sp, 0, 0); addObject(o);
+    }
+    let sinkMid = null;
+    for (const tx of [29, 30, 31]) {
+      const sp = w.wallSpots.find((s) => s.tx === tx && s.tz === rr[1] && s.nz === 1);
+      if (!sp) continue;
+      const o = { kind: tx === 30 ? 'sink' : 'deco', mesh: modelSink(), reach: 2.0 };
+      placeOnWall(o, sp, 0, 0.02);
+      o.y = 0.95; o.ix = o.x + o.nx * 0.45; o.iz = o.z + o.nz * 0.45;
+      addObject(addCols(o, [{ x: o.x + o.nx * 0.27, z: o.z + o.nz * 0.27, r: 0.32 }]));
+      if (tx === 30) { sinkMid = o; o.prompt = () => (prologueStep >= 2 ? '[E] Lavar o rosto' : 'Pia'); o.use = () => { if (prologueStep >= 2 && state === 'playing') startSinkScene(o); }; }
+    }
+    for (const tz of [rr[1] + 2, rr[1] + 3.2, rr[1] + 4.4]) {
+      const st = { kind: 'deco', mesh: modelStall(), x: (rr[2] + 1) * T - 0.08, z: tz * T };
+      st.mesh.rotation.y = -Math.PI / 2;
+      addObject(addCols(st, [{ x: st.x - 0.7, z: st.z, r: 0.55 }]));
+    }
+    void sc; void sinkMid;
+    prologueStep = 0;
+    P.hasFlash = false; P.flashOn = false;
+  }
+
+  // passos do prólogo
+  function prologueSavePC(scr) {
+    prologueStep = 1;
+    scr.material = PM.screenOff;
+    A.ui(); A.flashClick();
+    toast('Relatório salvo. 23:52. Hora de ir pra casa.');
+    updateObjective();
+    // algo muda nas outras telas...
+    setTimeout(() => {
+      if (!theme.prologue) return;
+      A.glitch(0.8); glitchPulse = 0.5;
+      for (const s of screens) if (!s.mine) s.mesh.material = PM.screenYellow;
+      power = 0.35; setTimeout(() => { power = 1; }, 380);
+      toast('...a luz piscou. Melhor pegar a lanterna de emergência na gaveta.');
+    }, 3500);
+  }
+  function prologueTakeFlash() {
+    prologueStep = 2;
+    P.hasFlash = true; P.flashOn = true;
+    A.pickup('battery'); A.flashClick();
+    toast('Lanterna. [F] liga/desliga.');
+    updateObjective();
+    setTimeout(() => { if (theme.prologue) { const c = world.center(world.idx(28, 3)); A.phone(c.x, 1, c.z); } }, 6000);
+  }
+  function startSinkScene(o) {
+    state = 'cutscene';
+    cut = { t: 0, o, yaw0: P.yaw, pitch0: P.pitch, x0: P.x, z0: P.z, s: {} };
+    prologueStep = 3;
+    ui.prompt.style.display = 'none'; ui.crosshair.style.display = 'none';
+  }
+  function updateCutscene(dt) {
+    const c = cut, o = c.o; c.t += dt; const t = c.t;
+    const wantYaw = Math.atan2(o.nx, o.nz);
+    const k = 1 - Math.exp(-dt * 2.5);
+    P.yaw += U.angDiff(P.yaw, wantYaw) * k;
+    const pitchT = t < 2.2 ? -0.6 : U.lerp(-0.6, 0.02, U.smooth(2.2, 3.4, t));
+    P.pitch += (pitchT - P.pitch) * k;
+    P.x += (o.x + o.nx * 0.62 - P.x) * k; P.z += (o.z + o.nz * 0.62 - P.z) * k;
+    P.y = 1.62 - (t < 2.2 ? 0.12 : 0.12 * (1 - U.smooth(2.2, 3.0, t)));
+    camera.position.set(P.x, P.y, P.z);
+    camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ');
+    if (t > 0.3 && !c.s.water) { c.s.water = 1; A.water(o.ix, 0.95, o.iz, 1.8); }
+    if (t > 2.4) {
+      const f = U.smooth(2.4, 4.2, t);
+      scriptFlicker = { x: o.x, z: o.z, s: f };
+      A.setHum(1.0 + f * 1.5, 1);
+    }
+    if (t > 2.9 && !c.s.g1) { c.s.g1 = 1; A.glitch(0.6); A.whisper(P.x - Math.sin(P.yaw) * -1, P.y, P.z - Math.cos(P.yaw) * -1); }
+    if (t > 3.9 && !c.s.pop) { c.s.pop = 1; A.lightPop(o.x, 2.6, o.z + 1); glitchPulse = 0.6; }
+    if (t > 4.4) { cut = null; startNoclip(levelIndex + 1, 'wall'); }
+  }
+
   function spawnPickup(kind, x, z) {
     let o;
     if (kind === 'battery') {
@@ -484,6 +724,7 @@ window.BackroomsGame = (function () {
     objectiveDone++;
     shake(0.25);
     if (objectiveDone === 2) {
+      brain.pendingGrow = true; // durante o apagão, longe dos seus olhos, ela muda
       // pico de energia -> apagão
       setTimeout(() => { if (state === 'playing') { blackoutT = U.rand(4, 6); A.lightPop(P.x + 3, 2.6, P.z + 2); A.glitch(1); toast('...a energia caiu.'); } }, 900);
     }
@@ -555,7 +796,8 @@ window.BackroomsGame = (function () {
   }
   function updateObjective() {
     let t;
-    if (exitPowered) t = theme.id === 0 ? 'Vá até a porta de SAÍDA' : 'Vá até o elevador de carga (SAÍDA)';
+    if (theme.prologue) t = ['Salve o relatório no seu computador', 'Pegue a lanterna de emergência na gaveta', 'Vá ao banheiro lavar o rosto', '...'][Math.min(3, prologueStep)];
+    else if (exitPowered) t = theme.id === 0 ? 'Vá até a porta de SAÍDA' : 'Vá até o elevador de carga (SAÍDA)';
     else if (theme.objective === 'breakers') t = 'Religue os disjuntores  ' + objectiveDone + '/' + theme.count;
     else {
       const have = P.inv.fuses + (generatorObj ? generatorObj.fuses : 0);
@@ -612,18 +854,22 @@ window.BackroomsGame = (function () {
     populate();
     placePlayerAtStart();
     brain.reset(world, theme.monster);
+    entity.root.visible = !theme.monster.disabled;
+    scriptFlicker = null;
+    ui.hud.classList.toggle('prologue', !!theme.prologue);
     distField = world.distField(world.tileOf(P.x, P.z), 70);
     trail = []; trailSet = new Set();
     eventT = U.rand(14, 24); halluT = U.rand(30, 50);
     updateObjective();
     if (A.ctx) { A.setAmbienceKind(theme.ambience); if (radio && state !== 'menu') radio.setOn(true); }
+    if (!theme.prologue) P.hasFlash = true;
     showLevelTitle();
   }
 
   function placePlayerAtStart() {
     const c = world.center(world.start), d = startDir();
     P.x = c.x; P.z = c.z; P.vx = P.vz = 0; P.speed = 0;
-    P.yaw = Math.atan2(-d.x, -d.z); P.pitch = -0.12;
+    P.yaw = theme.prologue ? 0 : Math.atan2(-d.x, -d.z); P.pitch = -0.12;
     P.stamina = 1; P.breath = 1; P.holding = false; P.busy = 0;
     P.crouch = false; P.crouchT = 0;
     lastSafe = { x: P.x, z: P.z };
@@ -676,7 +922,7 @@ window.BackroomsGame = (function () {
 
     // entidade + fantasma (alucinação)
     const skin = TT(Tex.skin());
-    entity = new BR.Entity(BR.Entity.gameMaterials(skin));
+    entity = new BR.Creature(BR.Entity.gameMaterials(skin));
     scene.add(entity.root);
     ghost = new BR.Entity(BR.Entity.gameMaterials(skin));
     ghost.root.visible = false;
@@ -772,7 +1018,7 @@ window.BackroomsGame = (function () {
     const ia = document.getElementById('intro-audio');
     if (ia) { try { ia.pause(); } catch (e) { /* ok */ } }
     if (!hintQueue.length && stats.time === 0) {
-      hintQueue = ['[WASD] mover   ·   [MOUSE] olhar', '[SHIFT] correr — faz MUITO barulho', '[C] agachar — quase silencioso', '[F] lanterna   ·   [E] interagir', '[M] mapa   ·   [Q] prender a respiração'];
+      hintQueue = ['[WASD] mover   ·   [MOUSE] olhar', '[E] interagir', '[SHIFT] correr   ·   [C] agachar'];
       hintT = 2.5;
     }
     lockPointer();
@@ -814,6 +1060,7 @@ window.BackroomsGame = (function () {
   //  AÇÕES DO JOGADOR
   // ==========================================================
   function toggleFlash() {
+    if (!P.hasFlash) { toast('Você não tem uma lanterna.'); return; }
     if (P.busyKind === 'battery') return;
     P.flashOn = !P.flashOn; A.flashClick();
     playerNoise(2, 'click');
@@ -858,18 +1105,19 @@ window.BackroomsGame = (function () {
     const moving = il > 0;
 
     if (P.stamina <= 0.01) P.exhausted = true;
-    if (P.exhausted && P.stamina > 0.35) P.exhausted = false;
+    if (P.exhausted && P.stamina > 0.25) P.exhausted = false;
     const wantRun = (keys.ShiftLeft || keys.ShiftRight) && moving && !P.exhausted && kW && P.busy <= 0;
     if (wantRun) P.crouch = false;
     P.running = wantRun;
-    let target = P.crouch ? 1.25 : wantRun ? 5.0 : 2.5;
+    let target = P.crouch ? 1.25 : wantRun ? 5.0 : 2.3;
     if (P.holding) target *= 0.85;
     if (P.busy > 0) target *= 0.5;
     if (mapOpen) target *= 0.6;
     if (readingNote) target *= 0.5;
 
-    if (wantRun) P.stamina = Math.max(0, P.stamina - dt / 6.5);
-    else P.stamina = Math.min(1, P.stamina + (dt / 8) * (P.fear > 0.5 ? 0.6 : 1) * (moving ? 0.8 : 1.2));
+    // ~11 s de corrida contínua; recupera em ~6 s parado
+    if (wantRun) P.stamina = Math.max(0, P.stamina - dt / 11);
+    else P.stamina = Math.min(1, P.stamina + (dt / 6) * (P.fear > 0.5 ? 0.7 : 1) * (moving ? 0.8 : 1.2));
 
     const acc = moving ? 10 : 12;
     P.vx += (ix * target - P.vx) * Math.min(1, acc * dt);
@@ -879,6 +1127,13 @@ window.BackroomsGame = (function () {
     world.collide(p, 0.3);
     // colisão com objetos
     for (const o of objects) {
+      if (o.cols) {
+        for (const c of o.cols) {
+          const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz), rr = c.r + 0.28;
+          if (d < rr && d > 1e-4) { p.x = c.x + (dx / d) * rr; p.z = c.z + (dz / d) * rr; }
+        }
+        continue;
+      }
       if (!o.r) continue;
       const dx = p.x - o.x, dz = p.z - o.z, d = Math.hypot(dx, dz), rr = o.r + 0.28;
       if (d < rr && d > 1e-4) { p.x = o.x + (dx / d) * rr; p.z = o.z + (dz / d) * rr; }
@@ -890,7 +1145,8 @@ window.BackroomsGame = (function () {
     stats.dist += moved;
 
     // passos + balanço da câmera
-    const stepLen = P.running ? 1.05 : P.crouch ? 0.55 : 0.78;
+    // cadência: correndo ≈ 4,2 passos/s (1,3x a gravação), andando ≈ 2/s, agachado ≈ 1,6/s
+    const stepLen = P.running ? 1.19 : P.crouch ? 0.78 : 1.15;
     if (moved > 0.0005) {
       P.stepAcc += moved;
       P.bobPhase += (moved / stepLen) * Math.PI;
@@ -906,7 +1162,8 @@ window.BackroomsGame = (function () {
     P.crouchT = U.damp(P.crouchT, P.crouch ? 1 : 0, 8, dt);
     const sp = Math.min(1, P.speed / 5);
     const amp = P.running ? 0.065 : P.crouch ? 0.025 : 0.04;
-    const bobY = Math.sin(P.bobPhase * 2) * amp * Math.min(1, P.speed / 1.2);
+    // ponto mais baixo do balanço = momento da pisada (sincronizado com o som)
+    const bobY = -Math.cos(P.bobPhase * 2) * amp * Math.min(1, P.speed / 1.2);
     const bobX = Math.sin(P.bobPhase) * amp * 0.6 * Math.min(1, P.speed / 1.2);
     const breathe = Math.sin(time * (1.2 + P.fear * 2)) * 0.008 * (1 + P.fear);
     P.y = U.lerp(1.62, 1.02, P.crouchT) + bobY + breathe;
@@ -969,6 +1226,7 @@ window.BackroomsGame = (function () {
   }
 
   function surfaceAt(x, z) {
+    if (theme.prologue && inZone(world, 'restroom', x, z)) return 'tile';
     for (const p of world.puddles) if (Math.hypot(p.x - x, p.z - z) < p.r) return 'water';
     return theme.surface;
   }
@@ -983,7 +1241,8 @@ window.BackroomsGame = (function () {
     camera.getWorldDirection(vF);
     P.flashDir.lerp(vF, 1 - Math.exp(-dt * 13)).normalize();
     if (P.flashOn && P.busyKind !== 'battery') P.battery = Math.max(0, P.battery - dt / 300);
-    let target = P.flashOn && P.battery > 0 && P.busyKind !== 'battery' ? (P.battery > 0.25 ? 1 : 0.35 + P.battery * 2.6) : 0;
+    flashModel.visible = P.hasFlash;
+    let target = P.hasFlash && P.flashOn && P.battery > 0 && P.busyKind !== 'battery' ? (P.battery > 0.25 ? 1 : 0.35 + P.battery * 2.6) : 0;
     // tremula com pilha fraca e perto da entidade (interferência)
     flickT -= dt;
     if (flickT <= 0) {
@@ -1044,7 +1303,10 @@ window.BackroomsGame = (function () {
         if (lp) A.crackle(lp.x, world.CEIL - 0.1, lp.z);
       }
     }
-    uni.uMonster.value.set(brain.pos.x, 0, brain.pos.z, monFlick);
+    if (scriptFlicker) {
+      const f = scriptFlicker.s * (Math.random() < 0.4 ? U.rand(0.5, 1) : U.rand(0, 0.15));
+      uni.uMonster.value.set(scriptFlicker.x, 0, scriptFlicker.z, f);
+    } else uni.uMonster.value.set(brain.pos.x, 0, brain.pos.z, monFlick);
     uni.uGlitch.value = brain.glitch();
     const light = world.lightAt(P.x, P.z);
     A.setHum(Math.min(1.3, light) * pw, 1 - monFlick * 0.6);
@@ -1070,6 +1332,7 @@ window.BackroomsGame = (function () {
   }
 
   function updateFearSanity(dt) {
+    if (theme.prologue) { P.sanity = 1; P.fear = 0; return; }
     const md = brain.dist, st = brain.state;
     let f = 0;
     if (st !== 'dormant') f = Math.max(0, 1 - md / 16) * 0.6;
@@ -1107,6 +1370,7 @@ window.BackroomsGame = (function () {
   // ==========================================================
   let ghostT = 0, ghostSeenT = 0;
   function hallucinations(dt) {
+    if (theme.prologue) return;
     const s = P.sanity;
     whisperT -= dt;
     if (s < 0.6 && whisperT <= 0) {
@@ -1151,6 +1415,7 @@ window.BackroomsGame = (function () {
   }
 
   function ambientEvents(dt) {
+    if (theme.prologue) return;
     eventT -= dt;
     if (eventT > 0) return;
     eventT = U.rand(16, 36);
@@ -1305,17 +1570,69 @@ window.BackroomsGame = (function () {
   function reachExit() {
     if (state !== 'playing') return;
     if (levelIndex < LEVELS.length - 1) {
-      state = 'transition';
-      ui.fade.style.opacity = '1';
-      A.fall(); A.fadeBus(0.15, 0.4);
-      setTimeout(() => {
-        buildLevel(levelIndex + 1);
-        A.fadeBus(1, 1.5);
-        state = document.pointerLockElement === document.body || noLock ? 'playing' : 'paused';
-        if (state === 'paused') ui.pause.classList.add('show');
-        setTimeout(() => { ui.fade.style.opacity = '0'; }, 400);
-      }, 2200);
+      // fica de frente para o vão da porta e atravessa (a parede atrás dela "some")
+      P.x = exitObj.x + exitObj.nx * 0.7; P.z = exitObj.z + exitObj.nz * 0.7;
+      P.yaw = Math.atan2(exitObj.nx, exitObj.nz); P.pitch = 0;
+      startNoclip(levelIndex + 1, 'wall');
     } else triggerWin();
+  }
+
+  // ==========================================================
+  //  TRANSIÇÃO "NO-CLIP": nada de corte seco. O mundo distorce,
+  //  você atravessa a parede (ou afunda no chão), tudo escurece
+  //  e você acorda caído no chão do próximo lugar.
+  // ==========================================================
+  function startNoclip(next, mode) {
+    if (trans) return;
+    state = 'transition';
+    trans = { t: 0, next, mode: mode || 'wall', built: false, x0: P.x, z0: P.z, y0: P.y, yaw: P.yaw, pitch: P.pitch, fx: -Math.sin(P.yaw), fz: -Math.cos(P.yaw) };
+    closeNote(); mapOpen = false; ui.map.classList.remove('show');
+    showHUD(false);
+    toastT = 0; ui.toast.classList.remove('show'); levelTitleT = 0; ui.levelTitle.classList.remove('show');
+    A.noclip();
+    if (brain.voice) brain.voice.set(brain.pos.x, 2, brain.pos.z, 0, 1, 1);
+  }
+  function updateTransition(dt) {
+    const tr = trans; tr.t += dt; const t = tr.t;
+    const OUT = 3.4, BUILD = 3.75, IN0 = 4.2, WAKE = 8.4;
+    if (t < BUILD) {
+      const k = U.smooth(0, OUT, t), push = U.smooth(0.9, OUT, t);
+      let x = tr.x0, y = tr.y0, z = tr.z0;
+      if (tr.mode === 'wall') { x += tr.fx * push * 2.4; z += tr.fz * push * 2.4; y -= push * 0.2; }
+      else y = tr.y0 - push * (tr.y0 + 0.9);
+      camera.position.set(x, y, z);
+      camera.rotation.set(U.lerp(tr.pitch, tr.mode === 'wall' ? 0.02 : -0.25, k), tr.yaw + Math.sin(t * 1.7) * 0.035 * k, Math.sin(t * 0.9) * 0.09 * k, 'YXZ');
+      camera.fov = 72 + k * 36; camera.updateProjectionMatrix();
+      transFX = k; transFade = U.smooth(OUT - 0.6, BUILD, t);
+      A.setMuffle(k * 0.85);
+      power = Math.max(0.05, 1 - k * 0.55 + (Math.random() < k * 0.25 ? -0.6 : 0));
+    } else if (!tr.built) {
+      tr.built = true;
+      transFade = 1;
+      buildLevel(tr.next); // a pausa da construção fica escondida no escuro
+    } else {
+      // acorda caído e se levanta devagar
+      const w = U.smooth(IN0, WAKE, t), up = U.smooth(IN0 + 1.3, WAKE, t);
+      camera.position.set(P.x + Math.sin(t * 0.5) * 0.02, U.lerp(0.22, 1.62, up), P.z);
+      camera.rotation.set(U.lerp(-1.05, P.pitch, U.smooth(IN0 + 0.4, WAKE - 0.5, t)), P.yaw + (1 - w) * 0.35, U.lerp(1.25, 0, up), 'YXZ');
+      camera.fov = 72 + (1 - w) * 22; camera.updateProjectionMatrix();
+      transFX = 1 - w; transFade = 1 - U.smooth(IN0, IN0 + 1.6, t);
+      A.setMuffle((1 - w) * 0.85);
+      if (t >= WAKE) {
+        trans = null; transFX = 0; transFade = 0; A.setMuffle(0);
+        P.y = 1.62; P.fov = 72;
+        state = document.pointerLockElement === document.body || noLock ? 'playing' : 'paused';
+        if (state === 'paused') ui.pause.classList.add('show'); else showHUD(true);
+        onArrive();
+      }
+    }
+  }
+  function onArrive() {
+    if (theme.id === 0) {
+      toast('...onde eu estou?', 3);
+      hintQueue = ['[F] lanterna   ·   [E] ler bilhetes', '[SHIFT] correr faz MUITO barulho   ·   [C] agachar', '[M] mapa   ·   [Q] prender a respiração'];
+      hintT = 4;
+    } else if (theme.id === 1) toast('Concreto. Frio. O zumbido mudou de tom.', 3.5);
   }
 
   function triggerWin() {
@@ -1487,7 +1804,7 @@ window.BackroomsGame = (function () {
     const now = performance.now();
     let dt = (now - prevT) / 1000; prevT = now;
     if (dt > 0.05) dt = 0.05;
-    if (state === 'playing' || state === 'caught' || state === 'transition') time += dt;
+    if (state === 'playing' || state === 'caught' || state === 'transition' || state === 'cutscene') time += dt;
     uni.uTime.value = time;
 
     if (state === 'playing') {
@@ -1511,7 +1828,17 @@ window.BackroomsGame = (function () {
       updateCaught(dt);
       updateFlashlight(dt);
       updateLights(dt);
-    } else if (state === 'menu' || state === 'transition' || state === 'paused') {
+    } else if (state === 'transition') {
+      updateTransition(dt);
+      updateFlashlight(dt);
+      updateLights(dt);
+      updateAudio();
+    } else if (state === 'cutscene') {
+      updateCutscene(dt);
+      updateFlashlight(dt);
+      updateLights(dt);
+      updateAudio();
+    } else if (state === 'menu' || state === 'paused') {
       // câmera respirando no menu
       if (world) {
         camera.position.set(P.x, P.y + Math.sin(now * 0.0008) * 0.01, P.z);
@@ -1529,13 +1856,15 @@ window.BackroomsGame = (function () {
     pu.uTime.value = time;
     pu.uGrain.value = (0.045 + (1 - s) * 0.05 + P.fear * 0.03) * (0.3 + 0.7 * fx);
     pu.uVignette.value = 0.55 + P.fear * 0.3;
-    pu.uAberr.value = (0.5 + P.fear * 1.6 + (1 - s) * 1.2) * fx;
-    pu.uWave.value = Math.max(0, 0.45 - s) * 2.2 * fx;
+    pu.uAberr.value = (0.5 + P.fear * 1.6 + (1 - s) * 1.2 + transFX * 3.5) * fx;
+    pu.uWave.value = (Math.max(0, 0.45 - s) * 2.2 + transFX * 1.4) * fx;
     pu.uDouble.value = Math.max(0, 0.25 - s) * 3 * fx;
     const near = brain && brain.state !== 'dormant' ? Math.max(0, 1 - brain.dist / 7) : 0;
     pu.uStatic.value = (near * 0.12 + glitchPulse * 0.25) * fx;
-    pu.uGlitch.value = Math.min(1, glitchPulse + near * 0.15 + (state === 'transition' ? 0.6 : 0)) * fx;
-    pu.uDesat.value = Math.max(0, 0.6 - s) * 0.9;
+    pu.uGlitch.value = Math.min(1, glitchPulse + near * 0.15 + transFX * 0.35 + transFade * 0.6) * fx;
+    pu.uDesat.value = Math.max(0, 0.6 - s) * 0.9 + transFX * 0.6;
+    pu.uFade.value = transFade;
+    pu.uDouble.value = Math.max(pu.uDouble.value, transFX * 0.8 * fx);
     pu.uRed.value = redPulse;
     pu.uScan.value = 0.35 * fx;
     pu.uBright.value = BR.Settings.brightness;
@@ -1543,7 +1872,7 @@ window.BackroomsGame = (function () {
     pu.uBloom.value = 0.7;
     pu.uLens.value = 1;
     uni.uExposure.value = 1.0;
-    uni.uBreath.value = Math.max(0, 0.5 - s) * 2;
+    uni.uBreath.value = Math.max(0, 0.5 - s) * 2 + transFX * 3;
     post.render(scene, camera);
   }
 
@@ -1573,6 +1902,13 @@ window.BackroomsGame = (function () {
     onCaught,
     onChaseStart() { A.stinger(); shake(0.3); glitchPulse = 0.4; },
     onLampBroken() { shake(0.1); },
+    onGrow(stage) {
+      const msg = ['', 'Ossos estalando no escuro. Ela não anda mais em pé.', 'Algo ENORME se arrasta pelas paredes.'][stage] || '';
+      if (msg) toast(msg, 4.5);
+      P.sanity = Math.max(0, P.sanity - 0.08);
+      A.stinger(); shake(0.4); glitchPulse = 0.5;
+    },
+    onDrop() { shake(0.9); glitchPulse = 0.8; redPulse = 0.25; setTimeout(() => { redPulse = 0; }, 400); },
     onMonsterShift() { /* reposicionada pelo diretor — invisível para o jogador */ },
   };
 

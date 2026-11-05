@@ -55,30 +55,51 @@
     'uniform vec3 uFlashPos; uniform vec3 uFlashDir; uniform vec3 uFlashColor; uniform vec2 uFlashCone; uniform float uFlashI;',
     'uniform vec4 uFlick; uniform vec4 uMonster; uniform vec4 uPoint; uniform vec3 uPointColor;',
     'uniform float uSpec; uniform float uShine; uniform float uCeil; uniform float uFogDensity; uniform float uExposure;',
-    'uniform float uDirtAmt; uniform float uEmissive; uniform float uTime;',
+    'uniform float uDirtAmt; uniform float uEmissive; uniform float uTime; uniform float uBump; uniform float uWet;',
     'varying vec3 vWorld; varying vec3 vNormal; varying vec2 vUv; varying vec3 vColor;',
     'void main(){',
-    '  vec3 N = normalize(vNormal);',
+    '  vec3 Ng = normalize(vNormal);',
     '#ifdef DOUBLE',
-    '  if (!gl_FrontFacing) N = -N;',
+    '  if (!gl_FrontFacing) Ng = -Ng;',
     '#endif',
+    '  float fd = length(cameraPosition - vWorld);',
+    '  float dirt = texture2D(uDirt, vWorld.xz * 0.043 + vec2(vWorld.y * 0.061, vWorld.y * 0.027)).r;',
     '#ifdef WORLD_UV',
+    // anti-repetição: 2 amostras (escala/ângulo diferentes) misturadas por um ruído grande
     '  vec2 uv = vWorld.xz * uUvScale;',
+    '  vec2 uv2 = mat2(0.799, -0.602, 0.602, 0.799) * uv * 0.71 + vec2(0.37, 0.13);',
+    '  float mixK = smoothstep(0.38, 0.62, texture2D(uDirt, vWorld.xz * 0.021 + 0.5).r);',
+    '  vec3 tex = mix(texture2D(uMap, uv).rgb, texture2D(uMap, uv2).rgb, mixK);',
     '#else',
     '  vec2 uv = vUv * uUvScale;',
+    '  vec3 tex = texture2D(uMap, uv).rgb;',
     '#endif',
-    '  vec3 alb = toLinear(texture2D(uMap, uv).rgb) * uTint * vColor;',
-    '  float dirt = texture2D(uDirt, vWorld.xz * 0.043 + vec2(vWorld.y * 0.061, vWorld.y * 0.027)).r;',
+    '  vec3 alb = toLinear(tex) * uTint * vColor;',
     '  alb *= mix(1.0, mix(0.66, 1.16, dirt), uDirtAmt);',
-    // luz assada
-    '  vec2 luv = (vWorld.xz + N.xz * 0.34) / uMapSize;',
+    '  vec3 N = Ng;',
+    '#ifdef BUMP',
+    // relevo a partir da própria textura (derivadas de tela — sem precisar de tangentes)
+    '  float hC = dot(tex, vec3(0.333));',
+    '  vec3 dpdx = dFdx(vWorld), dpdy = dFdy(vWorld);',
+    '  float dhdx = dFdx(hC), dhdy = dFdy(hC);',
+    '  vec3 r1 = cross(dpdy, Ng), r2 = cross(Ng, dpdx);',
+    '  float det = dot(dpdx, r1);',
+    '  vec3 grad = sign(det) * (dhdx * r1 + dhdy * r2);',
+    '  float bf = uBump * (1.0 - smoothstep(3.5, 12.0, fd));',
+    '  N = normalize(abs(det) * Ng - bf * grad);',
+    '#endif',
+    // luz assada (usa a normal geométrica para não "chiar" no lightmap)
+    '  vec2 luv = (vWorld.xz + Ng.xz * 0.34) / uMapSize;',
     '  vec4 lm = texture2D(uLightMap, luv) * 2.0;',
     '  float md = distance(vWorld.xz, uMonster.xz);',
     '  float mfl = 1.0 - uMonster.w * (1.0 - smoothstep(3.0, 11.0, md));',
     '  float direct = (lm.r * uFlick.x + lm.g * uFlick.y + lm.b * uFlick.z) * mfl;',
     '  float gi = lm.a * uFlick.w * mfl;',
     '  float hgt = clamp(vWorld.y / uCeil, 0.0, 1.0);',
-    '  float vf = N.y > 0.6 ? 1.0 : (N.y < -0.6 ? 0.26 : mix(0.42, 0.9, hgt));',
+    // forro: halo mais claro perto das luminárias acesas
+    '  float vf = Ng.y > 0.6 ? 1.0 : (Ng.y < -0.6 ? 0.22 + 0.32 * clamp(direct - 0.55, 0.0, 1.2) : mix(0.42, 0.9, hgt));',
+    // relevo das paredes sob luz de cima
+    '  if (abs(Ng.y) < 0.6) vf *= 0.86 + 0.28 * clamp(N.y * 4.0 + 0.5, 0.0, 1.0);',
     '  vec3 light = uLampColor * (direct * vf + gi) + uAmbient;',
     // lanterna
     '  vec3 Lv = uFlashPos - vWorld; float d = max(length(Lv), 0.001); vec3 L = Lv / d;',
@@ -95,18 +116,18 @@
     // luz pontual dinâmica
     '  vec3 Pv = uPoint.xyz - vWorld; float pd = max(length(Pv), 0.001);',
     '  col += alb * uPointColor * uPoint.w * max(dot(N, Pv / pd), 0.0) / (1.0 + pd * pd * 0.7);',
-    // especular (pele molhada, chão úmido)
+    // especular (pele molhada, chão úmido nas manchas)
+    '  float spec = uSpec * (1.0 + uWet * 3.0 * (1.0 - smoothstep(0.25, 0.45, dirt)));',
     '  vec3 V = normalize(cameraPosition - vWorld);',
     '  vec3 H = normalize(L + V);',
-    '  col += uFlashColor * pow(max(dot(N, H), 0.0), uShine) * uSpec * fl;',
-    '  col += uLampColor * pow(max(dot(N, normalize(vec3(0.0, 1.0, 0.0) + V)), 0.0), uShine) * uSpec * direct * 0.2;',
+    '  col += uFlashColor * pow(max(dot(N, H), 0.0), uShine) * spec * fl;',
+    '  col += uLampColor * pow(max(dot(N, normalize(vec3(0.0, 1.0, 0.0) + V)), 0.0), uShine) * spec * direct * 0.2;',
     '  col += alb * uEmissive;',
     '#ifdef EYE',
     '  float facing = pow(max(dot(N, V), 0.0), 2.0);',
     '  col = uTint * (uEmissive + 14.0 * fl * facing);',
     '#endif',
     // neblina
-    '  float fd = length(cameraPosition - vWorld);',
     '  float fog = 1.0 - exp(-fd * fd * uFogDensity * uFogDensity);',
     '  col = mix(col, uFogColor, fog);',
     '  gl_FragColor = vec4(toDisplay(col, uExposure), 1.0);',
@@ -225,6 +246,8 @@
       uSpec: { value: opts.spec || 0 }, uShine: { value: opts.shine || 16 },
       uDirtAmt: { value: opts.dirt != null ? opts.dirt : 1 },
       uEmissive: { value: opts.emissive || 0 },
+      uBump: { value: opts.bump || 0 },
+      uWet: { value: opts.wet || 0 },
     };
     const defines = {};
     if (opts.worldUV) defines.WORLD_UV = 1;
@@ -232,11 +255,13 @@
     if (opts.monster) defines.MONSTER = 1;
     if (opts.eye) defines.EYE = 1;
     if (opts.double) defines.DOUBLE = 1;
+    if (opts.bump) defines.BUMP = 1;
     const m = new THREE.ShaderMaterial({
       uniforms: Object.assign({}, u, own),
       vertexShader: VERT, fragmentShader: FRAG, defines,
       vertexColors: opts.vertexColors !== false,
       side: opts.double ? THREE.DoubleSide : THREE.FrontSide,
+      extensions: { derivatives: true },
     });
     return m;
   };

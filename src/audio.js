@@ -38,7 +38,10 @@
     A.master.connect(A.comp); A.comp.connect(ctx.destination);
 
     // fade (transições) -> geral.  Efeitos e música têm volumes separados.
-    A.fade = ctx.createGain(); A.fade.connect(A.master);
+    A.fade = ctx.createGain();
+    // passa-baixa global: abafa tudo durante as transições "no-clip"
+    A.muffle = ctx.createBiquadFilter(); A.muffle.type = 'lowpass'; A.muffle.frequency.value = 20000; A.muffle.Q.value = 0.6;
+    A.fade.connect(A.muffle); A.muffle.connect(A.master);
     A.bus = ctx.createGain(); A.bus.gain.value = BR.Settings.sfx; A.bus.connect(A.fade);
     A.musicBus = ctx.createGain(); A.musicBus.gain.value = BR.Settings.music; A.musicBus.connect(A.fade);
 
@@ -64,6 +67,57 @@
       p[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + wh * 0.5362) * 0.11; b6 = wh * 0.115926;
       last = (last + 0.02 * wh) / 1.02; b[i] = last * 3.5;
     }
+    A.loadSamples();
+  };
+
+  // ----------------------------------------------------------
+  //  SAMPLES (Assets/sfx) — gravados, recortados em "sprites"
+  //  (vários passos num arquivo só, cada um num slot fixo)
+  // ----------------------------------------------------------
+  const SAMPLES = {
+    walk: { url: 'Assets/sfx/passos-andar.mp3', slot: 0.6, lead: 0.05, count: 12, len: 0.5 },
+    run: { url: 'Assets/sfx/passos-correr.mp3', slot: 0.4, lead: 0.05, count: 12, len: 0.33 },
+    monster: { url: 'Assets/sfx/monstro-passos.mp3', slot: 1.0, lead: 0.05, count: 4, len: 0.95 },
+    flash: { url: 'Assets/sfx/lanterna-clique.mp3' },
+    jumpscare: { url: 'Assets/sfx/jumpscare.mp3' },
+    amb: { url: 'Assets/sfx/ambiente-loop.mp3' },
+  };
+  A.buf = {};
+  A._lastSlot = {};
+  A.loadSamples = function () {
+    for (const k in SAMPLES) {
+      fetch(SAMPLES[k].url)
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then((ab) => new Promise((res, rej) => A.ctx.decodeAudioData(ab, res, rej))) // forma com callback: Safari antigo
+        .then((b) => { A.buf[k] = b; if (k === 'amb' && A.amb) startAmbBed(); })
+        .catch(() => { /* sem o arquivo, cai no som sintetizado */ });
+    }
+  };
+  // toca um passo aleatório do sprite (evita repetir o anterior)
+  function playSlice(key, dest, gain, rate, when) {
+    const S = SAMPLES[key], b = A.buf[key];
+    if (!b) return false;
+    let k = Math.floor(Math.random() * S.count);
+    if (S.count > 2 && k === A._lastSlot[key]) k = (k + 1 + Math.floor(Math.random() * (S.count - 1))) % S.count;
+    A._lastSlot[key] = k;
+    const src = A.ctx.createBufferSource(); src.buffer = b;
+    src.playbackRate.value = rate || 1;
+    const g = A.ctx.createGain(); g.gain.value = gain;
+    src.connect(g); g.connect(dest);
+    src.start(when || A.now(), Math.max(0, k * S.slot + S.lead - 0.012), S.len + 0.012);
+    return true;
+  }
+  function playWhole(key, dest, gain, rate) {
+    const b = A.buf[key];
+    if (!b) return false;
+    const src = A.ctx.createBufferSource(); src.buffer = b; src.playbackRate.value = rate || 1;
+    const g = A.ctx.createGain(); g.gain.value = gain;
+    src.connect(g); g.connect(dest); src.start(A.now());
+    return true;
+  }
+  A.setMuffle = function (v) { // 0 = normal, 1 = totalmente abafado
+    if (!A.muffle) return;
+    A.muffle.frequency.setTargetAtTime(20000 * Math.pow(0.012, U.clamp(v, 0, 1)), A.ctx.currentTime, 0.15);
   };
   A.resume = function () { if (A.ctx && A.ctx.state === 'suspended') A.ctx.resume(); };
   A.suspend = function () { if (A.ctx && A.ctx.state === 'running') A.ctx.suspend(); };
@@ -210,7 +264,25 @@
   // surface: 'carpet' | 'concrete' | 'water' ; kind: 0 agachado, 1 andando, 2 correndo
   A.footstep = function (surface, kind) {
     if (!A.ctx) return;
-    const t = A.now(), vol = [0.22, 0.45, 0.8][kind] * U.rand(0.85, 1.12);
+    if (A.buf.walk && A.buf.run) {
+      const o = out(null, 0.9, { rev: surface === 'concrete' ? 0.18 : 0.06 });
+      let dest = o;
+      if (surface === 'concrete') { // carpete gravado -> "endurece" para o concreto
+        const hp = filt('highpass', 170, 0.7), pk = filt('peaking', 2700, 1.2); pk.gain.value = 6;
+        hp.connect(pk); pk.connect(o); dest = hp;
+      } else if (surface === 'tile') {
+        const hp = filt('highpass', 260, 0.7), pk = filt('peaking', 3500, 1.5); pk.gain.value = 8;
+        hp.connect(pk); pk.connect(o); dest = hp;
+      }
+      const g = [0.38, 0.72, 0.95][kind] * U.rand(0.85, 1.1);
+      playSlice(kind === 2 ? 'run' : 'walk', dest, g, (kind === 0 ? 0.93 : 1) * U.rand(0.96, 1.04));
+      if (surface === 'water') A.footstepSynth('water', kind, 0.7);
+      return;
+    }
+    A.footstepSynth(surface, kind, 1);
+  };
+  A.footstepSynth = function (surface, kind, mul) {
+    const t = A.now(), vol = [0.22, 0.45, 0.8][kind] * U.rand(0.85, 1.12) * (mul || 1);
     const o = out(null, 0.5);
     const th = osc('sine', U.rand(80, 95), t, 0.2);
     th.frequency.exponentialRampToValueAtTime(42, t + 0.1);
@@ -268,6 +340,7 @@
 
   A.flashClick = function () {
     if (!A.ctx) return;
+    if (playWhole('flash', out(null, 0.7), 1.0, U.rand(0.97, 1.03))) return;
     const t = A.now(), o = out(null, 0.2);
     chain(osc('square', 3200, t, 0.01), env(t, 0.001, 0.06, 0.008), o);
     chain(osc('square', 1700, t + 0.035, 0.01), env(t + 0.035, 0.001, 0.05, 0.01), o);
@@ -381,6 +454,36 @@
     chain(noise(A.brown, t, 1.5), filt('lowpass', 300), env(t, 0.01, 0.6, 1.3), o);
   };
 
+  // atravessando a realidade: zumbido grave que sobe, ar "sugado", impacto surdo no fim
+  A.noclip = function () {
+    if (!A.ctx) return;
+    const t = A.now(), o = out(null, 5, { rev: 0.6 });
+    const lp = filt('lowpass', 120, 4);
+    lp.frequency.exponentialRampToValueAtTime(2400, t + 3.4);
+    for (const [f, d] of [[38, 0], [57, 9], [76, -7]]) {
+      const s1 = osc('sawtooth', f, t, 3.8); s1.detune.value = d;
+      s1.frequency.exponentialRampToValueAtTime(f * 2.6, t + 3.5);
+      s1.connect(lp);
+    }
+    chain(lp, env(t, 2.6, 0.32, 0.9, 0.3), o);
+    const bp = filt('bandpass', 300, 0.8);
+    bp.frequency.exponentialRampToValueAtTime(5000, t + 3.4);
+    chain(noise(A.pink, t, 3.8), bp, env(t, 3.2, 0.28, 0.4), o);
+    const b = osc('sine', 52, t + 3.5, 2); b.frequency.exponentialRampToValueAtTime(22, t + 5);
+    chain(b, env(t + 3.5, 0.01, 0.9, 1.4), o);
+    setTimeout(() => A.glitch(1.2), 3300);
+  };
+  // torneira aberta
+  A.water = function (x, y, z, dur) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y, z], dur + 0.6, { ref: 1, roll: 1.2, rev: 0.5 });
+    const g = A.ctx.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.35, t + 0.15);
+    g.gain.setValueAtTime(0.35, t + dur); g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.25);
+    const am = osc('sine', 13, t, dur + 0.3), amg = A.ctx.createGain(); amg.gain.value = 0.25; am.connect(amg); amg.connect(g.gain);
+    chain(noise(A.white, t, dur + 0.4), filt('bandpass', 2200, 0.7), filt('lowpass', 6000), g, o);
+    chain(noise(A.pink, t, dur + 0.4), filt('lowpass', 500), env(t, 0.1, 0.25, dur), o);
+  };
+
   A.fall = function () {
     if (!A.ctx) return;
     const t = A.now(), o = out(null, 3.2, { rev: 0.6 });
@@ -393,8 +496,16 @@
   // ----------------------------------------------------------
   //  ENTIDADE
   // ----------------------------------------------------------
-  A.monsterStep = function (x, z, heavy, crawl) {
+  // size: 0.8 (pequena) .. 1.8 (gigante) -> mais grave, mais alto e mais longe
+  A.monsterStep = function (x, z, heavy, crawl, size) {
     if (!A.ctx) return;
+    const sz = size || 1;
+    if (A.buf.monster) {
+      const o = out([x, 0.2, z], 1.5, { ref: 2.0 * sz, roll: 1.0, rev: 0.5 });
+      playSlice('monster', o, 0.85 * (heavy || 0.8), U.rand(0.94, 1.06) / Math.pow(sz, 0.55));
+      if (crawl) A.claw(x, z, 0.6);
+      return;
+    }
     const t = A.now(), o = out([x, 0.2, z], 0.8, { ref: 2.2, roll: 1.05, rev: 0.45 });
     const v = (heavy || 0.8) * U.rand(0.8, 1.1);
     const th = osc('sine', U.rand(55, 70), t, 0.3);
@@ -403,6 +514,28 @@
     chain(noise(A.brown, t, 0.3), filt('lowpass', 420), env(t, 0.004, 0.6 * v, 0.2), o);
     if (crawl) chain(noise(A.white, t + 0.05, 0.1), filt('bandpass', 1400, 2), env(t + 0.05, 0.002, 0.18 * v, 0.06), o);
     if (Math.random() < 0.3) chain(noise(A.white, t + 0.02, 0.05), filt('highpass', 3000), env(t + 0.02, 0.001, 0.22 * v, 0.02), o);
+  };
+
+  // garra/ponta de perna tocando o chão (pernas da criatura)
+  A.claw = function (x, z, vol, y) {
+    if (!A.ctx) return;
+    const t = A.now(), o = out([x, y || 0.1, z], 0.4, { ref: 1.4, roll: 1.2, rev: 0.35 });
+    const v = (vol || 0.5) * U.rand(0.7, 1.1);
+    chain(noise(A.white, t, 0.05), filt('bandpass', U.rand(1800, 3200), 3), env(t, 0.001, 0.35 * v, 0.03), o);
+    const th = osc('sine', U.rand(140, 190), t, 0.12); th.frequency.exponentialRampToValueAtTime(70, t + 0.07);
+    chain(th, env(t, 0.002, 0.45 * v, 0.08), o);
+  };
+  // estalos de ossos (quando ela cresce)
+  A.bonesCrack = function (x, y, z) {
+    if (!A.ctx) return;
+    const t0 = A.now(), o = out([x, y, z], 3.5, { ref: 3, roll: 0.8, rev: 0.7 });
+    for (let i = 0; i < 16; i++) {
+      const t = t0 + Math.random() * 2.4;
+      chain(noise(A.white, t, 0.04), filt('bandpass', U.rand(900, 3500), 4), env(t, 0.001, U.rand(0.3, 0.8), U.rand(0.015, 0.05)), o);
+    }
+    const g = osc('sawtooth', 48, t0, 3), lp = filt('lowpass', 220, 2);
+    g.frequency.linearRampToValueAtTime(30, t0 + 3);
+    chain(g, lp, env(t0, 0.6, 0.6, 2.2), o);
   };
 
   // cliques guturais (o som característico da entidade)
@@ -524,22 +657,35 @@
     const m1 = osc('sawtooth', 47, t), mam = osc('sine', 0.15, t), mamg = ctx.createGain(); mamg.gain.value = 0.5;
     const mg = ctx.createGain(); mg.gain.value = 0.5; mam.connect(mamg); mamg.connect(mg.gain);
     chain(m1, filt('lowpass', 160), mg, amb.machine, A.bus);
+    // zumbido gravado (Assets) em loop sem emenda — principal camada do ambiente
+    amb.bed = ctx.createGain(); amb.bed.gain.value = 0; amb.bed.connect(A.bus);
     amb.kind = kind;
     A.setAmbienceKind(kind);
+    startAmbBed();
   };
+  function startAmbBed() {
+    if (!A.amb || A.amb.bedSrc || !A.buf.amb) return;
+    const src = A.ctx.createBufferSource(); src.buffer = A.buf.amb; src.loop = true;
+    src.connect(A.amb.bed); src.start(A.now(), Math.random() * 60);
+    A.amb.bedSrc = src;
+  }
   A.setAmbienceKind = function (kind) {
     if (!A.amb) return;
     const t = A.now();
     A.amb.kind = kind;
     A.amb.machine.gain.setTargetAtTime(kind === 'industrial' ? 0.05 : 0, t, 1);
-    A.amb.room.gain.setTargetAtTime(kind === 'industrial' ? 0.11 : 0.07, t, 1);
+    A.amb.room.gain.setTargetAtTime(kind === 'industrial' ? 0.11 : kind === 'office' ? 0.05 : 0.07, t, 1);
+    A.amb.bedMul = kind === 'industrial' ? 0.55 : kind === 'quiet' ? 0.25 : 1;
   };
   // nível de luz próximo -> volume do zumbido
   A.setHum = function (level, flicker) {
     if (!A.amb) return;
     const t = A.now();
-    A.amb.hum.gain.setTargetAtTime(0.004 + level * 0.022 * (flicker || 1), t, 0.12);
-    A.amb.buzz.gain.setTargetAtTime(0.0005 + level * 0.0025 * (flicker || 1), t, 0.12);
+    const f = flicker == null ? 1 : flicker, bed = !!A.amb.bedSrc, mul = A.amb.bedMul == null ? 1 : A.amb.bedMul;
+    // com o zumbido gravado tocando, o sintetizado vira só um reforço perto das lâmpadas
+    A.amb.hum.gain.setTargetAtTime((bed ? 0.002 : 0.004) + level * (bed ? 0.008 : 0.022) * f, t, 0.12);
+    A.amb.buzz.gain.setTargetAtTime(0.0005 + level * 0.0025 * f, t, 0.12);
+    if (bed) A.amb.bed.gain.setTargetAtTime((0.3 + Math.min(1.2, level) * 0.5) * f * mul, t, 0.25);
   };
 
   A.crackle = function (x, y, z) {
@@ -641,15 +787,30 @@
     }
   };
 
-  A.distantRun = function (x0, z0, x1, z1) {
+  A.distantRun = function (x0, z0, x1, z1, size) {
     if (!A.ctx) return;
     const n = 14;
     for (let i = 0; i < n; i++) {
       setTimeout(() => {
         const k = i / (n - 1);
-        A.monsterStep(U.lerp(x0, x1, k), U.lerp(z0, z1, k), 0.45, false);
-      }, i * 210);
+        A.monsterStep(U.lerp(x0, x1, k), U.lerp(z0, z1, k), 0.45 * (1 - k * 0.5), false, size);
+      }, i * 260);
     }
+  };
+  // a entidade imitando os SEUS passos de corrida (mesmo sample que você ouve)
+  A.mimicSteps = function (x, z, n) {
+    if (!A.ctx) return;
+    for (let i = 0; i < n; i++) {
+      setTimeout(() => {
+        const o = out([x + U.rand(-0.4, 0.4), 0.1, z + U.rand(-0.4, 0.4)], 0.8, { ref: 1.8, roll: 1.1, rev: 0.45 });
+        if (!playSlice('run', o, 0.9 * U.rand(0.85, 1.05), U.rand(0.95, 1.04))) A.monsterStep(x, z, 0.4, false, 0.8);
+      }, i * U.rand(225, 255));
+    }
+  };
+  A.flashClickAt = function (x, y, z) {
+    if (!A.ctx) return;
+    const o = out([x, y, z], 0.8, { ref: 1.2, roll: 1.1, rev: 0.4 });
+    if (!playWhole('flash', o, 1.0, 1)) chain(osc('square', 3200, A.now(), 0.01), env(A.now(), 0.001, 0.08, 0.008), o);
   };
 
   // zumbido elétrico posicional (disjuntores, porta energizada)
@@ -720,6 +881,13 @@
   // ----------------------------------------------------------
   A.jumpscare = function () {
     if (!A.ctx) return;
+    if (A.buf.jumpscare) {
+      playWhole('jumpscare', out(null, 6.5, { rev: 0.15 }), 1.0, 1);
+      const t = A.now(), o = out(null, 2, { rev: 0.3 });
+      const b = osc('sine', 60, t, 1.4); b.frequency.exponentialRampToValueAtTime(25, t + 1.2);
+      chain(b, env(t, 0.005, 0.8, 1.2), o);
+      return;
+    }
     const t = A.now(), o = out(null, 2.5, { rev: 0.3 });
     const mix = A.ctx.createGain(); mix.gain.value = 0.55; mix.connect(o);
     const ws = distCurve(60);

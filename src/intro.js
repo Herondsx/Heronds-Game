@@ -1,29 +1,32 @@
 /* ============================================================
    THE BACKROOMS — INTRO CINEMATOGRÁFICA (3D, Three.js)
    ------------------------------------------------------------
-   Uma TORRE de 9 salas empilhadas. A câmera DESCE atravessando
-   cada andar ("no-clip") — cada um mais distorcido, mais
-   amarelo e mais "esquecido" — até cair nos Fundos (nível 8),
-   por onde ela então AVANÇA... e algo vem ao encontro dela.
+   Uma TORRE de 8 andares empilhados. A câmera desce RETA, como
+   um elevador, passando pela laje de concreto entre os andares
+   e mostrando cada sala — cada uma mais distorcida, mais
+   amarela e mais "esquecida" — até atravessar o último piso e
+   chegar ao Nível 0 de verdade (o mesmo gerador e a mesma
+   iluminação do jogo). Lá, as luzes se apagam fileira por
+   fileira, vindo na sua direção.
 
-   Transições sincronizadas ao áudio (mesmos tempos de antes):
+   Sem legendas e sem mostrar a entidade: a curiosidade fica.
+   Transições sincronizadas ao áudio (mesmos tempos de sempre):
        T1  6 -> 9     T5  28 -> 30
        T2 15 -> 17    T6  31 -> 32
        T3 21 -> 22    T7  34 -> 35
        T4 25 -> 26    T8  37 -> 38  (chega nos Fundos)
-   Novidades: pós-processamento (bloom, grão, aberração, fita
-   VHS), glitches nas quedas, TV com estática, relógio que
-   enlouquece, poeira no ar, uma silhueta na porta do 4º andar
-   e a entidade se aproximando a cada apagão no salão final.
    ============================================================ */
 window.Intro = (function () {
   'use strict';
   const BR = window.BR;
 
-  const MEM = 8, BACK = 8, MAXLEVEL = 8;
-  const RH = 5, HW = 5, DEPTH = 7, ZBACK = 4, CAMZ = 3.4;
-  const HW8 = 13, ZFRONT8 = 6, ZFAR8 = 46;
-  const DRIFT = 34;
+  const MEM = 8, MAXLEVEL = 8;
+  const RH = 5, RIN = 4.2, HW = 5, DEPTH = 7, ZBACK = 4, CAMZ = 3.4;
+  const BACK_CEIL = 2.8;                       // forro do Nível 0
+  const Y7 = BACK_CEIL + 0.8 + RIN / 2;        // centro do último andar da torre
+  const TOP = Y7 + 7 * RH;                     // centro do primeiro andar
+  const EYE = 1.62;
+  const DRIFT = 26;
   const END_T = 57.0, FADEIN = 5.0;
 
   const SCHEDULE = [
@@ -39,42 +42,15 @@ window.Intro = (function () {
   ];
   const FALL_STARTS = [6, 15, 21, 25, 28, 31, 34, 37];
 
-  const LORE = [
-    [1.6, 5.8, 'Há lugares que a realidade deixou para trás.'],
-    [6.6, 8.8, 'Paredes que ninguém mais lembra de ter erguido.'],
-    [9.6, 14.4, 'Tudo o que é esquecido... não desaparece.'],
-    [15.3, 16.8, 'Apenas afunda.'],
-    [17.4, 20.6, 'Para um lugar mais fundo. Mais antigo. Mais vazio.'],
-    [21.2, 24.6, 'O cheiro de carpete úmido.'],
-    [25.0, 27.6, 'O zumbido que nunca cessa.'],
-    [28.2, 30.6, 'Cada andar lembra um pouco menos de ser real.'],
-    [31.2, 33.6, 'As formas erram. A luz esquece a cor.'],
-    [34.2, 36.6, 'Você não cai mais pelo prédio...'],
-    [37.0, 38.6, '...mas pela memória dele.'],
-    [39.5, 43.5, 'E então não há mais andares. Só o amarelo.'],
-    [44.5, 48.5, 'Corredores que não levam a lugar nenhum.'],
-    [49.5, 53.5, 'Se algo te encontrar aqui... continue andando.'],
-    [54.0, 56.8, 'Bem-vindo aos Fundos. Nível 0.'],
-  ];
-
-  // aparição no salão final: [início, fim, z da entidade, abre a boca]
-  const HALL_APPEAR = [
-    [44.5, 47.6, -43.5, 0],
-    [47.95, 50.2, -36, 0],
-    [50.55, 52.4, -31, 0.2],
-    [52.62, 52.78, null, 1],  // relance a 2 m, num estalo de luz
-  ];
-  const BLACKOUTS = [[47.6, 47.95], [50.2, 50.55], [52.4, 53.15]];
-
   // ---------------------- estado ----------------------
-  let renderer, scene, camera, camLight, lampLight, ambient, post;
+  let renderer, scene, camera, camLight, lampLight, ambient, post, tower, hall = null, hallLamps = [], killIdx = 0, hallFlick = { a: 1, b: 1, ta: 0, tb: 0 };
   let texWall, texFloor, texCeil, trimMat, tvTex, tvCanvas, tvCtx;
   let audio = null, audioOk = false;
   let running = false, finished = false, built = false;
   let startPerf = 0, onComplete = null;
-  let loreEls = [], activeLore = -1, lampMats = [], floorOffX = [];
-  let clocks = [], tvScreens = [], dust, doorGhost, hallGhost, osdTc, osd;
-  let lastFall = -1, lastBlack = -1;
+  let lampMats = [], floorOffX = [];
+  let clocks = [], tvScreens = [], dust, osdTc, osd;
+  let lastFall = -1;
 
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
@@ -211,23 +187,23 @@ window.Intro = (function () {
   // ============================================================
   function buildMemoryFloor(i) {
     const level = i, f = level / MAXLEVEL, P = palAt(level);
-    const g = new THREE.Group(); g.position.y = -i * RH;
+    const g = new THREE.Group(); g.position.y = TOP - i * RH;
     const ZLEN = DEPTH + ZBACK, ZC = (ZBACK - DEPTH) / 2;
 
     const wallMat = lam(P.wall, texWall), wallMatL = lam(shade(P.wall, 0.86), texWall), wallMatR = lam(shade(P.wall, 0.76), texWall);
     const floorMat = lam(shade(P.floor, 0.95), texFloor), ceilMat = lam(P.ceil, texCeil);
 
-    const back = box(HW * 2, RH, 0.1, wallMat); back.position.set(0, 0, -DEPTH); g.add(back);
-    const left = new THREE.Mesh(new THREE.PlaneGeometry(ZLEN, RH), wallMatL); left.rotation.y = Math.PI / 2; left.position.set(-HW, 0, ZC); g.add(left);
-    const right = new THREE.Mesh(new THREE.PlaneGeometry(ZLEN, RH), wallMatR); right.rotation.y = -Math.PI / 2; right.position.set(HW, 0, ZC); g.add(right);
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2, ZLEN), ceilMat); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, RH / 2, ZC); g.add(ceil);
-    const flo = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2, ZLEN), floorMat); flo.rotation.x = -Math.PI / 2; flo.position.set(0, -RH / 2, ZC); g.add(flo);
+    const back = box(HW * 2, RIN, 0.1, wallMat); back.position.set(0, 0, -DEPTH); g.add(back);
+    const left = new THREE.Mesh(new THREE.PlaneGeometry(ZLEN, RIN), wallMatL); left.rotation.y = Math.PI / 2; left.position.set(-HW, 0, ZC); g.add(left);
+    const right = new THREE.Mesh(new THREE.PlaneGeometry(ZLEN, RIN), wallMatR); right.rotation.y = -Math.PI / 2; right.position.set(HW, 0, ZC); g.add(right);
+    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2, ZLEN), ceilMat); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, RIN / 2, ZC); g.add(ceil);
+    const flo = new THREE.Mesh(new THREE.PlaneGeometry(HW * 2, ZLEN), floorMat); flo.rotation.x = -Math.PI / 2; flo.position.set(0, -RIN / 2, ZC); g.add(flo);
 
     function trimRun(y) {
       const b = box(HW * 2, 0.26, 0.07, trimMat); b.position.set(0, y, -DEPTH + 0.06); g.add(b);
       for (const sx of [-1, 1]) { const s = box(0.07, 0.26, ZLEN, trimMat); s.position.set(sx * (HW - 0.04), y, ZC); g.add(s); }
     }
-    trimRun(-RH / 2 + 0.14); trimRun(RH / 2 - 0.14);
+    trimRun(-RIN / 2 + 0.14); trimRun(RIN / 2 - 0.14);
 
     // janela
     const winLight = clamp(1 - level / 4.5, 0, 1);
@@ -253,13 +229,13 @@ window.Intro = (function () {
 
     // iluminação do teto
     if (level < 6.5) {
-      const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.12, 14), lam([60, 56, 44])); canopy.position.set(0, RH / 2 - 0.06, -1.2); g.add(canopy);
-      const globe = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 12), lampMat(P.lamp)); globe.position.set(0, RH / 2 - 0.36, -1.2); g.add(globe);
+      const canopy = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.12, 14), lam([60, 56, 44])); canopy.position.set(0, RIN / 2 - 0.06, -1.2); g.add(canopy);
+      const globe = new THREE.Mesh(new THREE.SphereGeometry(0.34, 14, 12), lampMat(P.lamp)); globe.position.set(0, RIN / 2 - 0.36, -1.2); g.add(globe);
     } else {
       for (let k = -1; k <= 1; k++) {
         const dead = hash(level * 7 + k * 3) < 0.18;
         const pm = dead ? emis([42, 40, 26]) : lampMat([255, 248, 210]);
-        const pan = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.2), pm); pan.rotation.x = Math.PI / 2; pan.position.set(k * 2.2, RH / 2 - 0.04, -1.5); g.add(pan);
+        const pan = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 2.2), pm); pan.rotation.x = Math.PI / 2; pan.position.set(k * 2.2, RIN / 2 - 0.04, -1.5); g.add(pan);
       }
     }
 
@@ -267,13 +243,13 @@ window.Intro = (function () {
     const chairA = clamp(1 - level / 8, 0, 1);
     if (chairA > 0.05) {
       const chair = makeChair(shade([122, 98, 88], 1 - f * 0.45));
-      chair.position.set((hash(level * 2.1) - 0.5) * 1.6, -RH / 2, -DEPTH + 1.4);
+      chair.position.set((hash(level * 2.1) - 0.5) * 1.6, -RIN / 2, -DEPTH + 1.4);
       chair.rotation.y = (hash(level * 3.3) - 0.5) * f * 0.7;
       chair.rotation.x = f * 0.22; chair.scale.y = 1 - f * 0.28; g.add(chair);
     }
     // estante
     if (level < 6) {
-      const sh = new THREE.Group(); sh.position.set(-HW + 0.28, -RH / 2, -4.7);
+      const sh = new THREE.Group(); sh.position.set(-HW + 0.28, -RIN / 2, -4.7);
       const body = box(0.42, 2.3, 1.5, lam([78, 56, 36])); body.position.y = 1.15; sh.add(body);
       const bookCols = [[120, 40, 30], [50, 70, 100], [90, 80, 40], [60, 90, 60]];
       for (let r = 0; r < 3; r++) {
@@ -285,7 +261,7 @@ window.Intro = (function () {
     // TV com estática (some nos andares mais fundos)
     if (level < 6) {
       const tv = makeTV(level);
-      tv.position.set(HW - 1.3, -RH / 2 + 0.6, -DEPTH + 1.1);
+      tv.position.set(HW - 1.3, -RIN / 2 + 0.6, -DEPTH + 1.1);
       tv.rotation.y = -0.6 + f * 0.4; tv.rotation.z = f * 0.12;
       g.add(tv);
     }
@@ -295,64 +271,45 @@ window.Intro = (function () {
     // quadro + tomada
     const frameM = box(1.2, 0.9, 0.06, trimMat); frameM.position.set(2.2, 0.6, -DEPTH + 0.07); g.add(frameM);
     const canvasM = box(1.0, 0.7, 0.02, lam(shade([90, 80, 60], 1 - f * 0.4))); canvasM.position.set(2.2, 0.6, -DEPTH + 0.11); g.add(canvasM);
-    const outlet = box(0.18, 0.28, 0.04, lam([220, 214, 198])); outlet.position.set(-1.8, -RH / 2 + 0.5, -DEPTH + 0.07); g.add(outlet);
+    const outlet = box(0.18, 0.28, 0.04, lam([220, 214, 198])); outlet.position.set(-1.8, -RIN / 2 + 0.5, -DEPTH + 0.07); g.add(outlet);
 
     const offX = (hash(level * 1.7) * 2 - 1) * f * 0.6;
     g.rotation.z = (hash(level * 5.3) * 2 - 1) * f * 0.10;
     g.rotation.x += (hash(level * 3.1) * 2 - 1) * f * 0.05;
     g.position.x = offX; floorOffX[i] = offX;
-    scene.add(g);
+    tower.add(g);
+    // laje de concreto entre este andar e o de baixo (o "elevador" passa por ela)
+    const slab = box(HW * 2 + 0.8, 0.74, ZLEN + 0.8, slabMat);
+    slab.position.set(offX, TOP - i * RH - RIN / 2 - 0.4, ZC);
+    tower.add(slab);
     return g;
   }
 
   // ============================================================
-  //  NÍVEL 8 — SALÃO BACKROOMS
+  //  NÍVEL 0 — gerado pelo mesmo mundo do jogo (lightmap, rodapé,
+  //  forro, luminárias), num salão desenhado para a câmera
   // ============================================================
-  function buildBackrooms() {
-    const P = palAt(8);
-    const g = new THREE.Group(); g.position.y = -BACK * RH;
-    const ZLEN = ZFRONT8 + ZFAR8, ZC = (ZFRONT8 - ZFAR8) / 2;
-    const wallMap = texWall.clone(); wallMap.repeat.set(6, 1.2); wallMap.needsUpdate = true;
-    const floorMap = texFloor.clone(); floorMap.repeat.set(14, 16); floorMap.needsUpdate = true;
-    const ceilMap = texCeil.clone(); ceilMap.repeat.set(10, 16); ceilMap.needsUpdate = true;
-    const wallMat = lam(P.wall, wallMap), floorMat = lam(shade(P.floor, 0.96), floorMap), ceilMat = lam(P.ceil, ceilMap);
-
-    const back = box(HW8 * 2, RH, 0.2, wallMat); back.position.set(0, 0, -ZFAR8); g.add(back);
-    for (const sx of [-1, 1]) { const w = new THREE.Mesh(new THREE.PlaneGeometry(ZLEN, RH), wallMat); w.rotation.y = -sx * Math.PI / 2; w.position.set(sx * HW8, 0, ZC); g.add(w); }
-    const flo = new THREE.Mesh(new THREE.PlaneGeometry(HW8 * 2, ZLEN), floorMat); flo.rotation.x = -Math.PI / 2; flo.position.set(0, -RH / 2, ZC); g.add(flo);
-    const ceil = new THREE.Mesh(new THREE.PlaneGeometry(HW8 * 2, ZLEN), ceilMat); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, RH / 2, ZC); g.add(ceil);
-
-    for (const px of [-7.5, 0, 7.5]) {
-      for (let pz = -2; pz > -ZFAR8; pz -= 10) {
-        if (px === 0 && pz < -20) continue; // deixa o corredor central livre para a aparição
-        const pil = box(1.5, RH, 1.5, wallMat); pil.position.set(px, 0, pz); g.add(pil);
-        for (const sx of [-1, 1]) { const tb = box(0.1, 0.12, 1.6, trimMat); tb.position.set(px + sx * 0.78, -RH / 2 + 0.16, pz); g.add(tb); }
-      }
-    }
-    for (const lx of [-9, -4.5, 0, 4.5, 9]) {
-      for (let lz = -2; lz > -ZFAR8; lz -= 7) {
-        const dead = hash(lx * 3 + lz) < 0.12 && lx !== 0;
-        const pm = dead ? emis([46, 44, 28]) : lampMat([255, 250, 220]);
-        const pan = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 2.4), pm); pan.rotation.x = Math.PI / 2; pan.position.set(lx, RH / 2 - 0.04, lz); g.add(pan);
-      }
-    }
-    for (const sx of [-1, 1]) for (const dz of [-12, -28, -40]) {
-      const hole = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.4), emis([8, 8, 6])); hole.rotation.y = -sx * Math.PI / 2; hole.position.set(sx * (HW8 - 0.05), -0.5, dz); g.add(hole);
-    }
-    floorOffX[8] = 0;
-    scene.add(g);
-    return g;
+  function buildHall() {
+    const T = BR.Tex, TT = (c, o) => T.toTexture(c, o);
+    BR.Shading.init();
+    hall = new BR.World({
+      size: 40, ceil: BACK_CEIL, layout: (N) => BR.Layouts.introHall(N),
+      lamps: { sx: 3, ox: 1, sz: 4, oz: 2, dead: 0.05, flick: 0.06, darkZones: 0, darkR: 0, radius: 7.5, height: 2.78, intensity: 7.2, gi: 0.45, hang: false },
+      textures: () => ({ wall: TT(T.wallpaper()), floor: TT(T.carpet()), ceil: TT(T.ceiling()), lamp: TT(T.lampDiffuser(), { clamp: true }) }),
+      trim: true, trimColor: 0x86704a, ceilingHoles: 0.003, floorSpec: 0.06, floorShine: 10,
+    }, renderer.capabilities.getMaxAnisotropy());
+    scene.add(hall.group);
+    const u = BR.Shading.uniforms;
+    u.uLampColor.value.setRGB(1.0, 0.9, 0.66); u.uAmbient.value.setRGB(0.01, 0.0085, 0.005);
+    u.uFogColor.value.setRGB(0.03, 0.025, 0.012); u.uFogDensity.value = 0.045;
+    u.uFlashI.value = 0; u.uMonster.value.set(9999, 0, 9999, 0); u.uBreath.value = 0; u.uGlitch.value = 0; u.uExposure.value = 1;
+    const sc = hall.center(hall.start);
+    // ordem do apagão: do fundo do salão para perto da câmera
+    hallLamps = hall.lamps.filter((l) => l.group < 3).sort((a, b) => a.z - b.z);
+    return sc;
   }
 
-  function entityMats() {
-    return {
-      body: new THREE.MeshStandardMaterial({ color: 0x0c0b0b, roughness: 0.35, metalness: 0.1 }),
-      eye: new THREE.MeshBasicMaterial({ color: 0xfff0b0 }),
-      teeth: new THREE.MeshStandardMaterial({ color: 0xcfc6a8, roughness: 0.4 }),
-      inner: new THREE.MeshBasicMaterial({ color: 0x000000 }),
-    };
-  }
-
+  let slabMat, startPt = { x: 0, z: 0 };
   function buildTower() {
     if (built) return; built = true;
     texWall = texWallpaper(); texFloor = texCarpet(); texCeil = texCeiling();
@@ -360,29 +317,18 @@ window.Intro = (function () {
     tvCtx = tvCanvas.getContext('2d');
     tvTex = new THREE.CanvasTexture(tvCanvas); tvTex.minFilter = THREE.LinearFilter;
     trimMat = lam([74, 56, 36]);
+    slabMat = new THREE.MeshStandardMaterial({ color: 0x2a2826, roughness: 1, side: THREE.DoubleSide });
+    startPt = buildHall();
+    // a torre fica exatamente em cima do ponto onde a câmera chega no Nível 0
+    tower = new THREE.Group(); tower.position.set(startPt.x, 0, startPt.z - CAMZ); scene.add(tower);
     for (let i = 0; i < MEM; i++) buildMemoryFloor(i);
-    const hall = buildBackrooms();
-
-    // silhueta parada na porta do 4º andar
-    doorGhost = new BR.Entity(entityMats());
-    doorGhost.root.position.set(HW - 0.75 + (floorOffX[4] || 0), -4 * RH - RH / 2, -3.3);
-    doorGhost.root.rotation.y = Math.atan2(-(HW - 0.75), CAMZ + 3.3);
-    doorGhost.root.scale.setScalar(0.95);
-    doorGhost.root.visible = false;
-    scene.add(doorGhost.root);
-    doorGhost.update(0.016, { look: new THREE.Vector3(0, -4 * RH, CAMZ), listen: true });
-
-    // a entidade do salão final
-    hallGhost = new BR.Entity(entityMats());
-    hallGhost.root.visible = false;
-    hall.add(hallGhost.root);
 
     // poeira no ar
     const N = 1000, pos = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 10; pos[i * 3 + 1] = -Math.random() * (RH * 9) + RH / 2; pos[i * 3 + 2] = (Math.random() - 0.5) * 11 - 1.5; }
+    for (let i = 0; i < N; i++) { pos[i * 3] = (Math.random() - 0.5) * 10; pos[i * 3 + 1] = Y7 - RIN / 2 + Math.random() * (RH * 8); pos[i * 3 + 2] = (Math.random() - 0.5) * 11 - 1.5; }
     const dg = new THREE.BufferGeometry(); dg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     dust = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0xfff2c8, size: 0.018, transparent: true, opacity: 0.3, depthWrite: false, blending: THREE.AdditiveBlending }));
-    scene.add(dust);
+    tower.add(dust);
   }
 
   // ============================================================
@@ -409,121 +355,89 @@ window.Intro = (function () {
     tvTex.needsUpdate = true;
   }
 
-  function inRanges(t, list) { for (const r of list) if (t >= r[0] && t < r[1]) return r; return null; }
-
   function render(t, dt) {
     const depth = depthAt(t);
     const f = clamp(depth / MAXLEVEL, 0, 1);
-    const bk = smooth(7.4, 8, depth);
+    const bk = smooth(7.3, 8, depth);
     const eps = 0.05;
     const speed = Math.abs(depthAt(t + eps) - depthAt(t - eps)) / (2 * eps);
     const boost = clamp(speed * 0.9, 0, 1.3);
 
-    // glitch sonoro no início de cada queda
-    for (let k = 0; k < FALL_STARTS.length; k++) if (t >= FALL_STARTS[k] && lastFall < k) { lastFall = k; if (BR.Audio.ctx) BR.Audio.glitch(0.5); }
+    for (let k = 0; k < FALL_STARTS.length; k++) if (t >= FALL_STARTS[k] && lastFall < k) { lastFall = k; if (BR.Audio.ctx) BR.Audio.glitch(0.25); }
 
-    // câmera
-    const camY = -depth * RH;
-    const forward = smooth(38, 56, t) * DRIFT;
-    const sway = (1 - bk) * 0.25;
-    const camX = Math.sin(t * 0.8) * sway + (hash(Math.floor(depth) * 1.7) * 2 - 1) * f * 0.4 * (1 - bk);
-    const camZ = CAMZ - forward;
+    // câmera: elevador — reta, sem inclinar, só desce
+    const camY = depth <= 7 ? TOP - depth * RH : lerp(Y7, EYE, depth - 7);
+    const forward = smooth(39, 56.5, t) * DRIFT;
+    const camX = startPt.x, camZ = startPt.z - forward;
     camera.position.set(camX, camY, camZ);
-    const basePitch = lerp(-0.05, 0.0, bk);
-    const dip = boost * 0.55;
-    const roll = Math.sin(t * 1.1) * 0.012 * (1 - bk) + boost * 0.04;
-    const shakeK = boost * 0.02 + (inRanges(t, [[52.6, 52.8]]) ? 0.04 : 0);
-    camera.rotation.set(basePitch - dip + (Math.random() - 0.5) * shakeK, (Math.random() - 0.5) * shakeK, roll, 'YXZ');
+    camera.rotation.set(0, 0, 0, 'YXZ');
 
-    // apagões no salão final
-    const black = inRanges(t, BLACKOUTS);
-    if (black && lastBlack !== black[0]) { lastBlack = black[0]; if (BR.Audio.ctx) BR.Audio.lightPop(camX + 2, camY + 2, camZ - 4); }
-    let dark = black ? 1 : 0;
-    const strobe = inRanges(t, [[52.62, 52.78]]);
-    if (strobe) dark = 0.15;
-
-    // luzes
+    // luzes da torre (não afetam o Nível 0, que tem iluminação própria)
     camLight.position.set(camX, camY + 0.5, camZ);
-    camLight.intensity = lerp(1.05, 0.3, bk) * (1 - dark * 0.92);
+    camLight.intensity = 1.05;
     const fl = Math.round(clamp(depth, 0, 7));
-    lampLight.visible = bk < 0.85;
+    lampLight.visible = bk < 0.9;
     lampLight.color = col(palAt(fl).lamp);
-    lampLight.position.set(floorOffX[fl] || 0, -fl * RH + RH / 2 - 0.4, -1.2);
-    ambient.intensity = lerp(0.5, 1.0, bk) * (1 - dark * 0.95);
-    ambient.color = col(lerpArr([255, 244, 214], [255, 238, 180], bk));
+    lampLight.position.set(startPt.x + (floorOffX[fl] || 0), TOP - fl * RH + RIN / 2 - 0.4, startPt.z - CAMZ - 1.2);
+    ambient.intensity = 0.5;
+    const fogCol = col([11, 10, 7]);
+    scene.fog.color = fogCol; scene.fog.far = 24;
+    renderer.setClearColor(col(lerpArr([11, 10, 7], [8, 7, 3], bk)), 1);
 
-    const fogCol = col(lerpArr([11, 10, 7], [40, 36, 18], bk)).multiplyScalar(1 - dark * 0.9);
-    scene.fog.color = fogCol; scene.fog.far = lerp(24, 44, bk);
-    renderer.setClearColor(fogCol, 1);
-
-    // lâmpadas: oscilação + apagões
-    const flickChance = 0.05 + f * 0.05 + (t > 44 && t < 53.5 ? 0.12 : 0);
+    const flickChance = 0.05 + f * 0.05;
     for (const m of lampMats) {
-      let k = 1 - dark;
+      let k = 1;
       if (Math.random() < flickChance * 0.15) m.userData.off = Math.random() * 0.12;
       if (m.userData.off > 0) { m.userData.off -= dt; k *= 0.35; }
       m.color.copy(m.userData.base).multiplyScalar(k);
     }
-
-    // relógios: andam normais em cima, enlouquecem embaixo
     for (const c of clocks) {
       const sp = c.level < 2 ? 1 : c.level < 4 ? 6 : -40 * (c.level - 3);
       c.m.rotation.z = -t * 0.1 * sp; c.h.rotation.z = -t * 0.008 * sp - 1.2;
     }
     if (depth < 6.5) updateTV(t, depth);
-    for (const s of tvScreens) s.mat.color.setScalar(1 - dark);
-
-    // silhueta na porta do 4º andar (só enquanto a câmera chega lá)
-    doorGhost.root.visible = depth > 3.55 && depth < 4.02 && t < 27.2;
-    if (doorGhost.root.visible) doorGhost.update(dt, { look: camera.position.clone(), listen: true, jerky: 0.6, agitation: 0.3 });
-
-    // a entidade no salão
-    const ap = inRanges(t, HALL_APPEAR);
-    if (ap && !black || (ap && strobe)) {
-      hallGhost.root.visible = true;
-      const z = ap[2] == null ? camZ - 2.1 : ap[2];
-      hallGhost.root.position.set(ap[2] == null ? camX * 0.5 : 0.3, -RH / 2, z);
-      hallGhost.root.rotation.y = Math.atan2(camX - hallGhost.root.position.x, camZ - z);
-      if (ap[2] == null) hallGhost.root.position.y = -RH / 2 + 0.05;
-      hallGhost.update(dt, { look: camera.position.clone(), mouth: ap[3], lunge: ap[2] == null ? 1 : 0, jerky: 1, agitation: 0.4 + ap[3], listen: ap[3] === 0 });
-    } else hallGhost.root.visible = false;
-
     if (dust) { dust.rotation.y = Math.sin(t * 0.05) * 0.05; dust.position.y = Math.sin(t * 0.2) * 0.2; }
+
+    // Nível 0: lâmpadas piscando + o apagão final vindo na sua direção
+    const u = BR.Shading.uniforms, H = hallFlick;
+    H.ta -= dt; H.tb -= dt;
+    if (H.ta <= 0) { H.a = Math.random() < 0.82 ? 1 : 0.1; H.ta = H.a === 1 ? 0.2 + Math.random() * 1.4 : 0.04 + Math.random() * 0.1; }
+    if (H.tb <= 0) { H.b = Math.random() < 0.75 ? 1 : 0.08; H.tb = H.b === 1 ? 0.2 + Math.random() * 1.8 : 0.04 + Math.random() * 0.12; }
+    u.uFlick.value.set(1, H.a, H.b, 1);
+    u.uTime.value = t;
+    const OFF0 = 50.8, OFF1 = 55.6;
+    if (t > OFF0 && killIdx < hallLamps.length) {
+      const want = Math.floor(Math.pow(clamp((t - OFF0) / (OFF1 - OFF0), 0, 1), 0.75) * hallLamps.length);
+      while (killIdx < want) {
+        const lp = hallLamps[killIdx++];
+        hall.killLamp(lp);
+        if (BR.Audio.ctx && killIdx % 4 === 0) BR.Audio.lightPop(lp.x, BACK_CEIL, lp.z);
+      }
+      if (killIdx >= hallLamps.length && BR.Audio.ctx) BR.Audio.boom();
+    }
 
     // pós-processamento
     const fx = BR.Settings.fx;
     const fadein = 1 - smooth(0, FADEIN, t);
-    const transBlack = clamp((boost - 0.35) * 0.9, 0, 0.7) * (1 - bk * 0.7);
-    const u = post.u;
-    u.uTime.value = t;
-    u.uFade.value = Math.max(fadein, transBlack, t > END_T - 1.2 ? smooth(END_T - 1.2, END_T, t) : 0);
-    u.uGrain.value = (0.05 + f * 0.05 + boost * 0.08) * (0.3 + 0.7 * fx);
-    u.uVignette.value = 0.85 - bk * 0.25;
-    u.uAberr.value = (0.5 + boost * 2.2 + (strobe ? 3 : 0)) * fx;
-    u.uGlitch.value = clamp(boost * 0.55 + (strobe ? 1 : 0) + (black ? 0.15 : 0) + (Math.random() < 0.01 ? 0.5 : 0), 0, 1) * fx;
-    u.uStatic.value = (boost * 0.12 + (strobe ? 0.3 : 0)) * fx;
-    u.uScan.value = 0.5 * fx;
-    u.uBloom.value = 0.6;
-    u.uBright.value = BR.Settings.brightness;
-    u.uDesat.value = f * 0.15;
-    u.uWave.value = boost * 0.4 * fx;
+    const pu = post.u;
+    pu.uTime.value = t;
+    pu.uFade.value = Math.max(fadein, t > END_T - 1.0 ? smooth(END_T - 1.0, END_T, t) : 0);
+    pu.uGrain.value = (0.05 + f * 0.04 + boost * 0.03) * (0.3 + 0.7 * fx);
+    pu.uVignette.value = 0.85 - bk * 0.3;
+    pu.uAberr.value = (0.5 + boost * 0.8) * fx;
+    pu.uGlitch.value = clamp(boost * 0.12 + (Math.random() < 0.008 ? 0.4 : 0), 0, 1) * fx;
+    pu.uStatic.value = boost * 0.04 * fx;
+    pu.uScan.value = 0.5 * fx;
+    pu.uBloom.value = 0.65;
+    pu.uBright.value = BR.Settings.brightness;
+    pu.uDesat.value = f * 0.12 * (1 - bk);
+    pu.uWave.value = 0;
     post.render(scene, camera);
 
-    updateLore(t);
     if (osdTc) {
       const s = Math.floor(t), mm = String(Math.floor(s / 60)).padStart(2, '0'), ss = String(s % 60).padStart(2, '0');
       osdTc.textContent = 'SP 00:' + mm + ':' + ss;
       osd.style.opacity = t > END_T - 2 ? 0 : (0.8 * (1 - fadein * 0.7)).toFixed(2);
-    }
-  }
-
-  function updateLore(t) {
-    let idx = -1;
-    for (let i = 0; i < LORE.length; i++) if (t >= LORE[i][0] && t <= LORE[i][1]) { idx = i; break; }
-    if (idx !== activeLore) {
-      if (activeLore >= 0) loreEls[activeLore].classList.remove('show');
-      if (idx >= 0) loreEls[idx].classList.add('show');
-      activeLore = idx;
     }
   }
 
@@ -544,13 +458,8 @@ window.Intro = (function () {
   }
   function finish() {
     if (finished) return; finished = true; running = false;
-    if (activeLore >= 0) { loreEls[activeLore].classList.remove('show'); activeLore = -1; }
     if (typeof onComplete === 'function') onComplete();
-    setTimeout(() => { try { post.dispose(); renderer.forceContextLoss(); renderer.dispose(); } catch (e) { /* ok */ } }, 1400);
-  }
-  function buildLore() {
-    const hostEl = document.getElementById('lore-text'); hostEl.innerHTML = '';
-    loreEls = LORE.map(([, , txt]) => { const p = document.createElement('p'); p.textContent = txt; hostEl.appendChild(p); return p; });
+    setTimeout(() => { try { if (hall) hall.dispose(); post.dispose(); renderer.forceContextLoss(); renderer.dispose(); } catch (e) { /* ok */ } }, 1400);
   }
   function resize() {
     if (!renderer || finished) return;
@@ -561,7 +470,7 @@ window.Intro = (function () {
 
   function start(audioEl, doneCb) {
     onComplete = doneCb; audio = audioEl;
-    finished = false; running = true; activeLore = -1;
+    finished = false; running = true;
 
     const canvas = document.getElementById('intro-canvas');
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false });
@@ -579,7 +488,7 @@ window.Intro = (function () {
     camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 220);
 
     osd = document.getElementById('vhs-osd'); osdTc = document.getElementById('vhs-tc');
-    buildTower(); buildLore();
+    buildTower();
     window.addEventListener('resize', resize);
 
     const skip = document.getElementById('skip-intro');

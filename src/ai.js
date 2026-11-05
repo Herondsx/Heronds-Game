@@ -38,7 +38,9 @@
   const LABEL = {
     dormant: 'DORMENTE', patrol: 'PATRULHA', investigate: 'INVESTIGANDO', stalk: 'ESPREITANDO', retreat: 'RECUANDO',
     chase: 'CAÇANDO', search: 'PROCURANDO', ambush: 'EMBOSCADA', flinch: 'OFUSCADA', breakLamp: 'APAGANDO LUZ',
+    blackout: 'APAGANDO AS SUAS LUZES',
   };
+  const STAGE_NAME = ['O MAGRO', 'ARANHA', 'GIGANTE'];
 
   function Brain(game, entity) {
     this.g = game;
@@ -48,6 +50,10 @@
     this.thoughts = [];
     this.mem = { skepticism: 0, flinchTol: 0, hideFound: [], decoys: 0, objectiveKnown: false, timesSeen: 0 };
     this.aggression = 0;
+    this.onCeiling = false;
+    // cada pé que toca o chão (ou a parede, ou o teto) vira som 3D
+    const self = this;
+    entity.onPlant = function (x, y, z, heavy, tip) { self.footSound(x, y, z, heavy, tip); };
   }
   const B = Brain.prototype;
 
@@ -64,8 +70,13 @@
     this.mem.objectiveKnown = false; this.mem.hideFound = [];
     // mantém o aprendizado sobre garrafas/lanterna entre níveis (ela lembra de você)
     this.mem.skepticism *= 0.6; this.mem.flinchTol *= 0.6;
-    this.cool = { screech: 0, flinch: 0, stalk: 0, lamp: 20, clicks: 4, growl: 6, lunge: 0, retreat: 0, think: 0 };
+    this.cool = { screech: 0, flinch: 0, stalk: 0, lamp: 20, clicks: 4, growl: 6, lunge: 0, retreat: 0, think: 0, mimic: U.rand(40, 70), blackout: 45, fake: 0 };
     this.lampBudget = cfg.lampBudget;
+    this.disabled = !!cfg.disabled;
+    this.e.setWorld(world);
+    this.e.setStage(cfg.stage || 0);
+    this.e.growth = 0;
+    this.onCeiling = false; this.pendingGrow = false; this.blackoutLeft = 0;
     const far = this.farTile(world.start, 0.85);
     this.place(far);
     this.set('dormant', 'Dormindo... em algum lugar longe de você.');
@@ -95,6 +106,7 @@
     this.place(this.farTile(this.w.tileOf(this.g.player.x, this.g.player.z), 0.7));
     this.awareness = 0; this.interest = null; this.lastSeen = null;
     this.aggression = Math.max(this.cfg.aggression, this.aggression - 0.15);
+    this.onCeiling = false;
     this.set('patrol', 'Te deixei ir. Por enquanto.');
     this.calm = -20;
   };
@@ -114,7 +126,10 @@
   //  Atualização
   // ----------------------------------------------------------
   B.update = function (dt) {
-    if (this.frozen) return;
+    if (this.frozen || this.disabled) return;
+    // cresce devagar o tempo todo; muda de forma quando o jogo pede (fora da sua vista)
+    this.e.growth = Math.min(1, this.e.growth + dt / 360);
+    if (this.pendingGrow && !this.g.playerSeesMonster && this.dist > 7) this.grow();
     this.time += dt; this.stateT += dt;
     for (const k in this.cool) this.cool[k] -= dt;
     this.perceive(dt);
@@ -268,6 +283,7 @@
           this.goTo(this.interest.x, this.interest.z);
           break;
         }
+        if (this.cool.mimic <= 0 && this.tryMimic()) break;
         if (this.arrived) {
           if (this.waitT > 0) { this.waitT -= dt; break; }
           if (this.tryBreakLamp()) break;
@@ -348,7 +364,7 @@
         if (this.dist < 3.6 && this.cool.lunge <= 0 && this.hasLOS) { this.lunging = 0.45; this.cool.lunge = 2.2; A.growl(this.pos.x, 2, this.pos.z, 1); }
         this.repathT -= dt;
         if (this.repathT <= 0) { this.repathT = 0.25; this.chasePath(); }
-        if (this.dist < 1.05) this.g.onCaught();
+        if (this.dist < this.e.reachDist()) this.g.onCaught();
         break;
       }
 
@@ -370,12 +386,32 @@
       }
 
       case 'ambush':
-        if (this.awareness >= 0.85 && this.vis > 0.05) { this.startChase('Eu sabia que você viria até aqui.'); break; }
+        if (this.onCeiling && this.dist < 2.8 + this.e.stage * 0.4) {
+          this.onCeiling = false;
+          this.startChase('Estava em cima de você o tempo todo.');
+          this.g.onDrop && this.g.onDrop();
+          break;
+        }
+        if (this.awareness >= 0.85 && this.vis > 0.05 && !(this.onCeiling && this.dist > 3)) { this.onCeiling = false; this.startChase('Eu sabia que você viria até aqui.'); break; }
         if (this.arrived) {
+          if (this.e.stage >= 1 && !this.onCeiling && this.stateT > 0.5) { this.onCeiling = true; this.think('Subi no teto. Ninguém olha para cima.'); }
           this.waitT -= dt;
-          if (this.waitT <= 0) { this.ambush = null; this.set('patrol', 'Você não veio. Ainda.'); }
+          if (this.waitT <= 0) { this.ambush = null; this.onCeiling = false; this.set('patrol', 'Você não veio. Ainda.'); }
         }
         break;
+
+      case 'blackout': {
+        // apaga as lâmpadas em volta de você, uma a uma, e então ataca no escuro
+        this.waitT -= dt;
+        if (this.waitT <= 0 && this.blackoutLeft > 0) {
+          const P = this.g.player;
+          const lp = this.w.nearestLamp(P.x, P.z, 8, true);
+          if (lp && this.w.killLamp(lp)) { A.lightPop(lp.x, this.w.CEIL, lp.z); this.g.onLampBroken(lp); this.lampBudget--; }
+          this.blackoutLeft--; this.waitT = U.rand(0.25, 0.5);
+        }
+        if (this.blackoutLeft <= 0 && this.waitT <= 0) this.startChase('Agora sim. No escuro.');
+        break;
+      }
 
       case 'breakLamp':
         if (this.awareness >= 1) { this.engage(); break; }
@@ -396,6 +432,16 @@
 
   B.engage = function () {
     const P = this.g.player;
+    this.onCeiling = false;
+    // truque: antes de atacar, apaga as luzes perto de você
+    if (this.e.stage >= 1 && this.cool.blackout <= 0 && this.lampBudget > 0 && this.dist > 6 && this.dist < 18 &&
+        this.w.nearestLamp(P.x, P.z, 8, true) && Math.random() < 0.7) {
+      this.cool.blackout = U.rand(70, 110);
+      this.blackoutLeft = U.randInt(3, 5); this.waitT = 0.3;
+      this.path = null; this.arrived = true;
+      this.set('blackout', 'Te vi. Primeiro, as luzes.');
+      return;
+    }
     if (this.dist > 11 && !this.g.playerSeesMonster && this.aggression < 0.65 && this.cool.stalk <= 0 && Math.random() < 0.65) {
       this.cool.stalk = 40;
       this.set('stalk', 'Te vi. Mas ainda não... vou te seguir de longe.');
@@ -405,6 +451,7 @@
 
   B.startChase = function (why) {
     const first = this.state !== 'chase' && this.state !== 'flinch';
+    this.onCeiling = false;
     this.set('chase', why || 'CAÇANDO.');
     this.awareness = 1.2; this.lostT = 0; this.repathT = 0;
     if (first) {
@@ -439,6 +486,17 @@
   B.endSearch = function () {
     this.aggression = Math.min(1, this.aggression + 0.08);
     this.calm = -22; // respiro para o jogador
+    // truque: passos pesados indo embora... enquanto ela volta em silêncio
+    if (this.cool.fake <= 0 && this.lastSeen && Math.random() < 0.4) {
+      this.cool.fake = 90;
+      const P = this.g.player, ang = Math.atan2(this.pos.x - P.x, this.pos.z - P.z);
+      const ex = this.pos.x + Math.sin(ang) * 18, ez = this.pos.z + Math.cos(ang) * 18;
+      A.distantRun(this.pos.x, this.pos.z, ex, ez, this.e.soundSize());
+      this.awareness = 0.8; this.cool.stalk = 0;
+      this.set('stalk', 'Fingi que fui embora. Ainda estou aqui.');
+      this.goTo(this.lastSeen.x, this.lastSeen.z);
+      return;
+    }
     if (this.mem.objectiveKnown && Math.random() < 0.45 + this.aggression * 0.3 && this.startAmbush()) return;
     this.set('patrol', 'Você é bom em se esconder. Eu sou paciente.');
     this.waitT = U.rand(1, 2);
@@ -456,14 +514,15 @@
       const t = U.pick(w.open), c = w.center(t);
       const d = Math.hypot(c.x - o.x, c.z - o.z);
       if (d < 2.5 || d > 8) continue;
-      const s = (1 - Math.min(1, w.lightAt(c.x, c.z))) * 2 + (w.los(c.x, c.z, o.x, o.z) ? 1 : -4) - Math.abs(d - 5) * 0.2;
+      const ceil = this.e.stage >= 1;
+      const s = (1 - Math.min(1, w.lightAt(c.x, c.z))) * (ceil ? 0.6 : 2) + (w.los(c.x, c.z, o.x, o.z) ? 1 : -4) - Math.abs(d - (ceil ? 3.5 : 5)) * 0.25;
       if (s > bs) { bs = s; best = c; }
     }
     if (!best) return false;
     this.ambush = o;
     this.goTo(best.x, best.z);
     this.waitT = U.rand(18, 30);
-    this.set('ambush', 'Você precisa ' + (o.label || 'daquilo') + '. Vou te esperar lá, no escuro.');
+    this.set('ambush', 'Você precisa ' + (o.label || 'daquilo') + '. Vou te esperar lá' + (this.e.stage >= 1 ? ', em cima.' : ', no escuro.'));
     return true;
   };
 
@@ -516,8 +575,40 @@
       if (s > bs) { bs = s; best = c; why = heat > 1 ? 'Voltando aonde já senti você antes.' : ob ? 'Rondando o que você procura.' : dark > 0.6 ? 'Prefiro o escuro.' : 'Vagando. Escutando.'; }
     }
     if (best) { this.goTo(best.x, best.z); this.think(why); }
+    this.onCeiling = this.e.stage >= 1 && Math.random() < 0.22;
+    if (this.onCeiling) this.think('Vou pelo teto. É mais silencioso lá em cima.');
     this.waitT = U.rand(0.8, 3);
   };
+
+  // truque: imitar você — seus passos correndo, o clique da sua lanterna, batidas na parede
+  B.tryMimic = function () {
+    if (this.cool.mimic > 0 || !this.g.distField) return false;
+    const P = this.g.player;
+    const pd = this.g.distField[this.w.tileOf(this.pos.x, this.pos.z)]; // distância pelo caminho
+    if (this.hasLOS || !(pd > 10 && pd < 40)) return false;
+    this.cool.mimic = U.rand(45, 80);
+    const r = Math.random();
+    // posição do som: atrás de você ou no caminho entre vocês dois
+    const back = P.yaw + Math.PI + U.rand(-0.6, 0.6), d = U.rand(7, 12);
+    let sx = P.x - Math.sin(back) * -d, sz = P.z - Math.cos(back) * -d;
+    if (this.w.solidAt(sx, sz)) { sx = U.lerp(P.x, this.pos.x, 0.5); sz = U.lerp(P.z, this.pos.z, 0.5); }
+    if (r < 0.5) { A.mimicSteps(sx, sz, U.randInt(5, 9)); this.think('Imitei os seus passos. Você vai olhar para trás?'); }
+    else if (r < 0.75) { A.flashClickAt(sx, 1.2, sz); this.think('Clique. Igual à sua lanterna.'); }
+    else { A.knock(sx, 1.3, sz, 3); this.think('Bati na parede perto de você. Só para ver o que você faz.'); }
+    return true;
+  };
+
+  B.grow = function () {
+    this.pendingGrow = false;
+    if (this.e.stage >= 2) return;
+    this.e.setStage(this.e.stage + 1);
+    this.e.growth = 0;
+    A.bonesCrack(this.pos.x, 1.5, this.pos.z);
+    this.think('Estou maior agora. ' + STAGE_NAME[this.e.stage] + '.');
+    this.aggression = Math.min(1, this.aggression + 0.1);
+    if (this.g.onGrow) this.g.onGrow(this.e.stage);
+  };
+  B.stageName = function () { return STAGE_NAME[this.e.stage] || ''; };
 
   B.tryBreakLamp = function () {
     if (this.lampBudget <= 0 || this.cool.lamp > 0 || Math.random() > 0.4) return false;
@@ -596,8 +687,11 @@
 
   B.speedFor = function () {
     const c = this.cfg, s = this.state;
-    if (s === 'dormant' || s === 'flinch' || (s === 'breakLamp' && this.arrived)) return 0;
+    if (s === 'dormant' || s === 'flinch' || s === 'blackout' || (s === 'breakLamp' && this.arrived)) return 0;
     if (this.arrived) return 0;
+    return this.baseSpeed(c, s) * this.e.cfg.speedMul * (this.onCeiling ? 0.8 : 1);
+  };
+  B.baseSpeed = function (c, s) {
     if (s === 'chase') return c.run * (1 + this.aggression * 0.12) * (this.lunging > 0 ? 1.45 : 1);
     if (s === 'stalk') return this.dist > 14 ? c.walk * 1.8 : c.walk * 1.05;
     if (s === 'retreat') return c.run * 0.75;
@@ -652,15 +746,15 @@
   // ----------------------------------------------------------
   //  SONS
   // ----------------------------------------------------------
+  B.footSound = function (x, y, z, heavy, tip) {
+    if (this.disabled) return;
+    const s = this.state;
+    const vol = s === 'stalk' ? 0.22 : s === 'ambush' || s === 'blackout' ? 0.3 : s === 'chase' ? 1 : 0.62;
+    if (tip) A.claw(x, z, vol * (y > 0.5 ? 0.8 : 1), y);
+    if (heavy || !tip) A.monsterStep(x, z, vol * (tip ? 0.85 : 1), false, this.e.soundSize());
+  };
   B.sounds = function (dt) {
-    const s = this.state, crawl = s === 'chase' || s === 'retreat';
-    this.stepAcc += this.moved || 0;
-    const stepLen = crawl ? 0.6 : 0.95;
-    if (this.stepAcc > stepLen) {
-      this.stepAcc = 0;
-      const heavy = s === 'stalk' ? 0.22 : s === 'ambush' ? 0.3 : s === 'chase' ? 1 : 0.65;
-      A.monsterStep(this.pos.x, this.pos.z, heavy, crawl);
-    }
+    const s = this.state;
     if (this.voice) {
       const lvl = { dormant: 0.08, patrol: 0.32, investigate: 0.38, stalk: 0.03, retreat: 0.1, chase: 0.75, search: 0.5, ambush: 0.02, flinch: 0.6, breakLamp: 0.3 }[s] || 0.2;
       const rate = s === 'chase' ? 1.5 : s === 'search' ? 0.8 : 0.38;
@@ -688,8 +782,9 @@
     const seen = this.g.playerSeesMonster;
     e.update(dt, {
       speed: this.curSpeed,
-      crawl: s === 'chase' || s === 'retreat' ? 1 : 0,
       look: L ? new THREE.Vector3(L.x, L.y, L.z) : null,
+      ceiling: this.onCeiling,
+      reachTarget: this.lampTarget ? new THREE.Vector3(this.lampTarget.x, this.w.CEIL - 0.05, this.lampTarget.z) : null,
       listen: (this.arrived && (s === 'patrol' || s === 'investigate' || s === 'search')) || s === 'ambush',
       mouth: s === 'flinch' ? 1 : s === 'chase' ? (this.lunging > 0 ? 0.9 : 0.3) : 0,
       reach: s === 'breakLamp' && this.arrived ? 1 : 0,
@@ -705,7 +800,8 @@
 
   // intensidade da oscilação das lâmpadas causada por ela
   B.flickerStrength = function () {
-    return { dormant: 0, patrol: 0.5, investigate: 0.6, stalk: 0.12, retreat: 0.25, chase: 0.95, search: 0.65, ambush: 0, flinch: 1, breakLamp: 0.8 }[this.state] || 0.3;
+    if (this.disabled) return 0;
+    return { dormant: 0, patrol: 0.5, investigate: 0.6, stalk: 0.12, retreat: 0.25, chase: 0.95, search: 0.65, ambush: 0, flinch: 1, breakLamp: 0.8, blackout: 0.9 }[this.state] || 0.3;
   };
   B.glitch = function () {
     return this.state === 'chase' ? 0.45 : this.state === 'flinch' ? 1 : 0.06;

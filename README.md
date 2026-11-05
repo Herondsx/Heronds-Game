@@ -46,6 +46,8 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 | F3 | ver o estado e os "pensamentos" da entidade em tempo real |
 
 ### Objetivos
+- **Prólogo — o escritório (23:47):** salve o relatório, pegue a lanterna de emergência na gaveta e vá ao
+  banheiro lavar o rosto. Algo está errado com este prédio... e você atravessa a parede.
 - **Nível 0 — O Saguão:** religue 3 disjuntores para destravar a porta de manutenção.
   Cada disjuntor faz um estalo alto, e a entidade passa a entender para onde você vai.
 - **Nível 1 — Zona Habitável:** encontre 3 fusíveis, leve-os ao gerador e corra até o elevador de carga.
@@ -64,11 +66,19 @@ GitHub Pages hospeda. Não há nada de servidor (PHP, Python, Node...).
 - **Água de amêndoa, pilhas, garrafas, bilhetes, rádio, mapa explorado**, além de eventos
   ambientes (batidas na parede, portas batendo, um telefone antigo tocando, apagões).
 
-## A entidade ("O Inquilino")
+## A entidade ("O Inquilino") — e ela CRESCE
 
-Modelo procedural articulado (~2,6 m, costelas aparentes, braços longos demais, mandíbula que abre
-demais, olhos que refletem a lanterna). Anda curvada, corre de quatro na caçada e tem espasmos.
-Fica "stop-motion" quando você olha para ela de perto. As lâmpadas piscam ao redor dela.
+Criatura procedural com **física de pernas em IK** (`src/creature.js`), em três estágios:
+
+1. **O Magro** — humanoide alto e esquelético, anda em pé.
+2. **Aranha** — os braços viraram pernas: anda de quatro, joelhos acima do corpo, pescoço comprido.
+3. **Gigante** — seis pernas longuíssimas, corpo no alto e um tronco humano pendurado de cabeça para
+   baixo, com os braços arrastando no chão.
+
+Os pés ficam **plantados** no mundo e só se movem quando o corpo se afasta (passada em arco, grupos
+alternados). Em corredores estreitos as pernas **sobem pelas paredes**, e ela também anda **pelo teto**.
+O corpo tem mola (afunda a cada passo pesado) e os braços balançam como pêndulos. Ela muda de forma
+longe dos seus olhos: depois do 2º disjuntor no Nível 0 e do 2º fusível no Nível 1.
 
 ### Como ela pensa (`src/ai.js`)
 
@@ -84,6 +94,10 @@ Fica "stop-motion" quando você olha para ela de perto. As lâmpadas piscam ao r
   para a sombra) → caçar (prevê sua rota para interceptar e tenta **flanquear** evitando o seu rastro)
   → procurar (último ponto visto, direção da fuga, cantos escuros) → emboscar. Também apaga lâmpadas
   de propósito para deixar o nível mais escuro.
+- **Truques que você não espera:** imita os SEUS passos de corrida atrás de você, faz o clique da sua
+  lanterna, bate na parede perto de você; apaga as lâmpadas ao seu redor uma a uma antes de atacar no
+  escuro; espera **no teto** em cima do caminho e cai quando você passa por baixo; e às vezes "vai
+  embora" com passos pesados se afastando... enquanto volta em silêncio.
 - **Diretor de IA:** se você passa muito tempo sem encontro, ela "fareja" e se reposiciona fora da
   sua vista. Depois de uma caçada, dá um respiro.
 
@@ -98,7 +112,9 @@ src/postfx.js     pós-processamento: bloom, aberração, grão, VHS, glitch, di
 src/audio.js      áudio 3D procedural (HRTF, reverb, oclusão, todos os efeitos)
 src/shading.js    shaders de iluminação (lightmap + lanterna + neblina)
 src/world.js      geração de níveis, lightmap assado, geometria, colisão, A*, Dijkstra
-src/entity.js     modelo e animação procedural da entidade
+src/entity.js     humanoide antigo (usado nas alucinações) + materiais da entidade
+src/creature.js   a criatura que cresce: estágios, IK, pés plantados, paredes e teto
+src/layouts.js    plantas fixas: escritório do prólogo e salão do fim da abertura
 src/ai.js         cérebro da entidade
 src/game.js       jogador, mecânicas, objetivos, interface e laço principal
 src/intro.js      abertura cinematográfica sincronizada com Assets/Audio-intro.mp3
@@ -111,8 +127,17 @@ src/intro.js      abertura cinematográfica sincronizada com Assets/Audio-intro.
 - **Geometria mesclada:** paredes, chão, forro e luminárias viram poucas *draw calls*, com AO por vértice.
 - **Pathfinding:** A* em 8 direções com suavização (*string pulling*) e Dijkstra a partir do jogador
   (usado para audição, oclusão sonora e para o diretor).
-- Tudo é gerado na hora: nenhuma imagem externa. As únicas mídias são as músicas e o áudio da
-  intro em `Assets/`.
+- Texturas e geometria são geradas na hora (nenhuma imagem externa).
+- **Sons gravados** (`Assets/`, enviados para o projeto) são recortados em `Assets/sfx/`: passos no
+  carpete andando e correndo (cada passo é disparado no instante da pisada; a corrida tem cadência 1,3×
+  a da gravação), passos pesados da entidade (mais graves conforme ela cresce), um único clique da
+  lanterna, o grito do jumpscare e um loop sem emenda do zumbido fluorescente. Os efeitos que não têm
+  gravação continuam sintetizados.
+- **Transições sem teletransporte:** ao atravessar a parede do banheiro ou a porta de saída, o mundo
+  distorce, as paredes respiram, o som abafa, você atravessa a parede e acorda caído no chão do próximo
+  lugar, levantando devagar.
+- **Abertura:** a câmera desce reta como um elevador pelos andares (com a laje entre eles), sem
+  legendas, até o Nível 0 real — onde as luzes se apagam fileira por fileira na sua direção.
 
 Em **Ajustes** (Esc) dá para mudar sensibilidade, brilho, intensidade dos efeitos de tela, a
 resolução de renderização (útil em notebooks) e três volumes separados: **geral**, **música e intro**
